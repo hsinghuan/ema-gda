@@ -1,1 +1,1 @@
-# Exponential Moving Average Inspired Gradual Domain Adaptation
+# EMA-inspired Gradual Domain Adaptation
