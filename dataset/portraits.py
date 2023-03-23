@@ -45,17 +45,20 @@ def compute_portraits_stats(img_dir: str):
 
     mean /= nb_samples
     std /= nb_samples
-    print(nb_samples)
     return mean, std
 
 
-def get_portraits(data_dir: str, domain: List, batch_size: int):
+def get_portraits(data_dir: str, domain: List, batch_size: int, val: bool):
     transform = transforms.Compose([transforms.Normalize((128.8960,), (62.1401,)), transforms.Resize((32,32))])
     dataset = PortraitsDataset(data_dir, domain, transform=transform)
-    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [int(len(dataset) * 0.9), len(dataset) - int(len(dataset) * 0.9)])
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-    return train_loader, val_loader
+    if val:
+        train_dataset, val_dataset = torch.utils.data.random_split(dataset, [int(len(dataset) * 0.9), len(dataset) - int(len(dataset) * 0.9)])
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+        return train_loader, val_loader
+    else:
+        train_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
+        return train_loader
 
 
 # dataset = PortraitsDataset("/home/hhchung/data/faces_aligned_small_mirrored_co_aligned_cropped_cleaned", portraits_domains[0])
