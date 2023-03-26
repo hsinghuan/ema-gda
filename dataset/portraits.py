@@ -9,12 +9,34 @@ import matplotlib.pyplot as plt
 portraits_domains = [[1905,1940],[1940,1950],[1950,1960],[1960,1970],[1970,1980],[1980,1990],[1990,2000],[2000,2014]]
 
 class PortraitsDataset(Dataset):
-    def __init__(self, img_dir, domain, transform=None, target_transform=None):
+    def __init__(self, img_dir, domain, transform=None, target_transform=None, target_test=False):
         self.img_dir = img_dir
         self.transform = transform
         self.target_transform = target_transform
-        F_paths = [os.path.join(img_dir, "F", filename) for filename in os.listdir(os.path.join(img_dir, "F")) if int(filename[:4]) >= domain[0] and int(filename[:4]) < domain[1]]
-        M_paths = [os.path.join(img_dir, "M", filename) for filename in os.listdir(os.path.join(img_dir, "M")) if int(filename[:4]) >= domain[0] and int(filename[:4]) < domain[1]]
+        if domain == portraits_domains[-1]:
+            F_paths = []
+            M_paths = []
+            if target_test:
+                with open(os.path.join(img_dir, "F_target_test.txt"), "r") as f:
+                    for line in f:
+                        line = line.strip()
+                        F_paths.append(os.path.join(img_dir, line))
+                with open(os.path.join(img_dir, "M_target_test.txt"), "r") as f:
+                    for line in f:
+                        line = line.strip()
+                        M_paths.append(os.path.join(img_dir, line))
+            else:
+                with open(os.path.join(img_dir, "F_target_train.txt"), "r") as f:
+                    for line in f:
+                        line = line.strip()
+                        F_paths.append(os.path.join(img_dir, line))
+                with open(os.path.join(img_dir, "M_target_train.txt"), "r") as f:
+                    for line in f:
+                        line = line.strip()
+                        M_paths.append(os.path.join(img_dir, line))
+        else: # not the target domain
+            F_paths = [os.path.join(img_dir, "F", filename) for filename in os.listdir(os.path.join(img_dir, "F")) if int(filename[:4]) >= domain[0] and int(filename[:4]) < domain[1]]
+            M_paths = [os.path.join(img_dir, "M", filename) for filename in os.listdir(os.path.join(img_dir, "M")) if int(filename[:4]) >= domain[0] and int(filename[:4]) < domain[1]]
         self.img_paths = F_paths + M_paths
         self.img_labels = [0] * len(F_paths) + [1] * len(M_paths)
 
@@ -49,7 +71,7 @@ def compute_portraits_stats(img_dir: str):
 
 
 def get_portraits(data_dir: str, domain: List, batch_size: int, val: bool):
-    transform = transforms.Compose([transforms.Normalize((128.8960,), (62.1401,)), transforms.Resize((32,32))])
+    transform = transforms.Compose([transforms.Normalize((128.8960,), (62.1401,)), transforms.Resize((128,128))])
     dataset = PortraitsDataset(data_dir, domain, transform=transform)
     if val:
         train_dataset, val_dataset = torch.utils.data.random_split(dataset, [int(len(dataset) * 0.9), len(dataset) - int(len(dataset) * 0.9)])
@@ -61,7 +83,10 @@ def get_portraits(data_dir: str, domain: List, batch_size: int, val: bool):
         return train_loader
 
 
-# dataset = PortraitsDataset("/home/hhchung/data/faces_aligned_small_mirrored_co_aligned_cropped_cleaned", portraits_domains[0])
+
+
+# dataset = PortraitsDataset("/home/hhchung/data/faces_aligned_small_mirrored_co_aligned_cropped_cleaned", portraits_domains[-1], target_test = True)
+# print(len(dataset))
 # print(dataset[3], dataset[3][0].shape)
 # plt.imshow(dataset[3][0].squeeze(0), cmap='gray')
 # plt.show()
@@ -76,3 +101,4 @@ def get_portraits(data_dir: str, domain: List, batch_size: int, val: bool):
 #     print(data.shape)
 #     print(y.shape)
 #     break
+
