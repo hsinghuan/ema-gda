@@ -107,7 +107,7 @@ def get_portraits(data_dir: str, domain: List, batch_size: int, target_test: boo
 #     print(y.shape)
 #     break
 
-test_loader = get_portraits("/home/hhchung/data/faces_aligned_small_mirrored_co_aligned_cropped_cleaned", portraits_domains[-1], 128, val=False, target_test=True)
-for data, y in test_loader:
-    print(data.shape)
-    print(y.shape)
+# test_loader = get_portraits("/home/hhchung/data/faces_aligned_small_mirrored_co_aligned_cropped_cleaned", portraits_domains[-1], 128, val=False, target_test=True)
+# for data, y in test_loader:
+#     print(data.shape)
+#     print(y.shape)
