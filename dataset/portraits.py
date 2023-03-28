@@ -70,9 +70,14 @@ def compute_portraits_stats(img_dir: str):
     return mean, std
 
 
-def get_portraits(data_dir: str, domain: List, batch_size: int, val: bool):
+def get_portraits(data_dir: str, domain: List, batch_size: int, target_test: bool = False, val: bool = True):
     transform = transforms.Compose([transforms.Normalize((128.8960,), (62.1401,)), transforms.Resize((128,128))])
-    dataset = PortraitsDataset(data_dir, domain, transform=transform)
+    dataset = PortraitsDataset(data_dir, domain, transform=transform, target_test=target_test)
+    if target_test:
+        assert domain == portraits_domains[-1]
+        test_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=False)
+        return test_loader
+
     if val:
         train_dataset, val_dataset = torch.utils.data.random_split(dataset, [int(len(dataset) * 0.9), len(dataset) - int(len(dataset) * 0.9)])
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
@@ -102,3 +107,7 @@ def get_portraits(data_dir: str, domain: List, batch_size: int, val: bool):
 #     print(y.shape)
 #     break
 
+test_loader = get_portraits("/home/hhchung/data/faces_aligned_small_mirrored_co_aligned_cropped_cleaned", portraits_domains[-1], 128, val=False, target_test=True)
+for data, y in test_loader:
+    print(data.shape)
+    print(y.shape)
