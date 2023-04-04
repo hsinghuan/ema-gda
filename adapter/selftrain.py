@@ -71,7 +71,7 @@ class SelfTrainer:
 
         return total_correct / total_num
 
-    def _adapt_train_eval(self, train_loader, val_loader, confidence_q, args):
+    def _adapt_train_eval(self, train_loader, confidence_q, args):
         # pseudo_train_loader = self._pseudo_label(train_loader, self.encoder, self.head, confidence_q)
         # pseudo_val_loader = self._pseudo_label(val_loader, self.encoder, self.head, confidence_q)
         alpha = self._calc_alpha(train_loader, confidence_q)
@@ -79,36 +79,40 @@ class SelfTrainer:
         encoder_s, head_s = deepcopy(self.encoder).to(self.device), deepcopy(self.head).to(self.device)
 
         optimizer = torch.optim.Adam(list(encoder_s.parameters()) + list(head_s.parameters()), lr=args.adapt_lr)
-        best_val_loss = np.inf
-        best_val_score = None
-        best_encoder, best_head = None, None
-        patience = 5
-        staleness = 0
+        # best_val_loss = np.inf
+        # best_val_score = None
+        # best_encoder, best_head = None, None
+        # patience = 20
+        # staleness = 0
         for e in range(1, args.adapt_epochs + 1):
             train_loss, train_score = self._adapt_train_epoch(encoder_s, head_s, train_loader, optimizer, alpha)
-            val_loss, val_score = self._adapt_eval_epoch(encoder_s, head_s, val_loader, alpha)
-            val_acc = self._oracle_eval_epoch(encoder_s, head_s, val_loader)
+            # val_loss, val_score = self._adapt_eval_epoch(encoder_s, head_s, val_loader, alpha)
+            # val_acc = self._oracle_eval_epoch(encoder_s, head_s, val_loader)
+            train_acc = self._oracle_eval_epoch(encoder_s, head_s, train_loader)
 
-            print(f"Confidence q: {confidence_q} Epoch: {e} Train Loss: {train_loss} Val Loss: {val_loss} Val Acc: {val_acc}")
+            print(f"Confidence q: {confidence_q} Epoch: {e} Train Loss: {train_loss} Train Acc: {train_acc}") # Val Loss: {val_loss} Val Acc: {val_acc}")
 
             self.writer.add_scalar("Loss/train", train_loss, e)
-            self.writer.add_scalar("Loss/val", val_loss, e)
+            # self.writer.add_scalar("Loss/val", val_loss, e)
             self.writer.add_scalar("Score/train", train_score, e)
-            self.writer.add_scalar("Score/val", val_score, e)
+            # self.writer.add_scalar("Score/val", val_score, e)
 
-            if val_loss < best_val_loss:
-                best_encoder = deepcopy(encoder_s)
-                best_head = deepcopy(head_s)
-                best_val_loss = val_loss
-                best_val_score = val_score
-                staleness = 0
-            else:
-                staleness += 1
 
-            if staleness > patience:
-                break
+            # if val_loss < best_val_loss:
+            #     best_encoder = deepcopy(encoder_s)
+            #     best_head = deepcopy(head_s)
+            #     best_val_loss = val_loss
+            #     best_val_score = val_score
+            #     staleness = 0
+            # else:
+            #     staleness += 1
+            #
+            # if staleness > patience:
+            #     break
 
-        return best_encoder, best_head, best_val_score
+        # return best_encoder, best_head, best_val_score
+        return encoder_s, head_s, 0
+
 
     @torch.no_grad()
     def _calc_alpha(self, loader, confidence_q):
@@ -155,13 +159,13 @@ class SelfTrainer:
 
 
 
-    def adapt(self, domain_name, train_loader, val_loader, confidence_q_list, args):
+    def adapt(self, domain_name, train_loader, confidence_q_list, args):
         # pseudo label train loader, val loader
         performance_dict = dict()
         for confidence_q in confidence_q_list:
             run_name = f"{args.method}_{confidence_q}_{args.random_seed}"
             self.writer = SummaryWriter(os.path.join(args.log_dir, args.dataset, domain_name, run_name))
-            encoder_s, head_s, val_score = self._adapt_train_eval(train_loader, val_loader, confidence_q, args)
+            encoder_s, head_s, val_score = self._adapt_train_eval(train_loader, confidence_q, args)
             performance_dict[confidence_q] = {"encoder": encoder_s, "head": head_s, "score": val_score}
 
         best_val_score = -np.inf
