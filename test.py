@@ -9,11 +9,11 @@ from model import TwoLayerCNN, ThreeLayerCNN, TwoLayerMLPHead
 
 def load_data_model(args, device="cpu"):
     if args.dataset == "rotate-mnist":
-        test_loader = dataset.get_rotate_mnist(args.data_dir, dataset.rotate_mnist_domains[-1], batch_size = 256, target_test=True)
+        test_loader = dataset.get_rotate_mnist(args.data_dir, len(dataset.rotate_mnist_domains) - 1, batch_size = 256, target_test=True)
         feat_dim = 9216
         encoder, head = TwoLayerCNN(), TwoLayerMLPHead(feat_dim, feat_dim // 2, 10)
     elif args.dataset == "portraits":
-        test_loader = dataset.get_portraits(args.data_dir, dataset.portraits_domains[-1], batch_size = 256, target_test=True)
+        test_loader = dataset.get_portraits(args.data_dir, len(dataset.portraits_domains) -1, batch_size = 256, target_test=True)
         feat_dim = 6272
         encoder, head = ThreeLayerCNN(), TwoLayerMLPHead(feat_dim, feat_dim // 2, 2)
     encoder, head = encoder.to(device), head.to(device)

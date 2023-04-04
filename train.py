@@ -3,10 +3,16 @@ import os
 from copy import deepcopy
 import torch
 import torch.nn.functional as F
-from utils import get_device, set_random_seeds
+from utils import get_device, set_random_seeds, eval
 import dataset
-from model import TwoLayerCNN, ThreeLayerCNN, TwoLayerMLPHead
+from adapter import SelfTrainer, UncertaintyAggregatedTeacher
+from model import TwoLayerCNN, ThreeLayerCNN, TwoLayerMLPHead, Model
 
+get_dataloader = {"rotate-mnist": dataset.get_rotate_mnist,
+                  "portraits": dataset.get_portraits}
+
+get_domain = {"rotate-mnist": dataset.rotate_mnist_domains,
+              "portraits": dataset.portraits_domains}
 
 def train(loader, encoder, head, optimizer, device="cpu"):
     encoder.train()
@@ -25,39 +31,22 @@ def train(loader, encoder, head, optimizer, device="cpu"):
 
         pred = torch.argmax(output, dim=1)
         total_correct += torch.eq(pred, y).sum().item()
-        total_loss += loss.item()
+        total_loss += loss.item() * data.shape[0]
         total_num += data.shape[0]
 
     return total_loss / total_num, total_correct / total_num
 
-@torch.no_grad()
-def eval(loader, encoder, head, device="cpu"):
-    encoder.eval()
-    head.eval()
-    total_loss = 0
-    total_correct = 0
-    total_num = 0
-    for data, y in loader:
-        data, y = data.to(device), y.to(device)
-        output = head(encoder(data))
-        loss = F.nll_loss(F.log_softmax(output, dim=1), y)
 
-        pred = torch.argmax(output, dim=1)
-        total_correct += torch.eq(pred, y).sum().item()
-        total_loss += loss.item()
-        total_num += data.shape[0]
-
-    return total_loss / total_num, total_correct / total_num
 
 
 
 def source_train(args, device="cpu"):
     if args.dataset == "rotate-mnist":
-        train_loader, val_loader = dataset.get_rotate_mnist(args.data_dir, dataset.rotate_mnist_domains[0], batch_size = 256, val = True)
+        train_loader, val_loader = get_dataloader["rotate-mnist"](args.data_dir, 0, batch_size = 256, val = True)
         feat_dim = 9216
         encoder, head = TwoLayerCNN(), TwoLayerMLPHead(feat_dim, feat_dim // 2, 10)
     elif args.dataset == "portraits":
-        train_loader, val_loader = dataset.get_portraits(args.data_dir, dataset.portraits_domains[0], batch_size = 256, val = True)
+        train_loader, val_loader = get_dataloader["portraits"](args.data_dir, 0, batch_size = 256, val = True)
         feat_dim = 6272
         encoder, head = ThreeLayerCNN(), TwoLayerMLPHead(feat_dim, feat_dim // 2, 2)
 
@@ -92,6 +81,36 @@ def main(args):
     encoder, head = source_train(args, device)
     if args.method == "wo-adapt":
         pass
+    elif args.method == "direct-adapt":
+        adapter = SelfTrainer(encoder, head, device)
+        domains = get_domain[args.dataset]
+        tgt_train_loader = get_dataloader[args.dataset](args.data_dir, len(domains) - 1, batch_size=256, val=False)
+        confidence_q_list = [0.1]
+        d_name = str(len(domains) - 1)
+        adapter.adapt(d_name, tgt_train_loader, confidence_q_list, args)
+        encoder, head = adapter.get_encoder_head()
+    elif args.method == "gradual-selftrain":
+        adapter = SelfTrainer(encoder, head, device)
+        domains = get_domain[args.dataset]
+        confidence_q_list = [0.1]
+        for domain_idx in range(1, len(domains)):
+            print(f"Domain Idx: {domain_idx}")
+            d_name = str(domain_idx)
+            train_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=False)
+            adapter.adapt(d_name, train_loader, confidence_q_list, args)
+        encoder, head = adapter.get_encoder_head()
+    elif args.method == "uat":
+        model = Model(encoder, head).to(device)
+        adapter = UncertaintyAggregatedTeacher(model, device)
+        domains = get_domain[args.dataset]
+        confidence_q_list = [0.1]
+        for domain_idx in range(1, len(domains)):
+            print(f"Domain Idx: {domain_idx}")
+            d_name = str(domain_idx)
+            train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True)
+            adapter.adapt(d_name, train_loader, val_loader, confidence_q_list, args)
+        model = adapter.get_model()
+        encoder, head = model.get_encoder_head()
 
     # save encoder, head
     os.makedirs(os.path.join(args.ckpt_dir, args.dataset), exist_ok=True)
@@ -108,8 +127,8 @@ if __name__ == "__main__":
     parser.add_argument("--ckpt_dir", type=str, help="path to model checkpoint directory", default="checkpoints")
     parser.add_argument("--result_dir", type=str, help="path to performance results directory", default="results")
     parser.add_argument("--method", type=str, help="adaptation method")
-    parser.add_argument("--train_epochs", type=int, help="number of training epochs", default=100)
-    parser.add_argument("--adapt_epochs", type=int, help="number of adaptation epochs", default=100)
+    parser.add_argument("--train_epochs", type=int, help="number of training epochs", default=50)
+    parser.add_argument("--adapt_epochs", type=int, help="number of adaptation epochs", default=10)
     parser.add_argument("--adapt_lr", type=float, help="learning rate for adaptation optimizer", default=1e-3)
     parser.add_argument("--analyze_feat", help="whether save features", nargs='?', type=bool, const=1, default=0)
     parser.add_argument("--random_seed", type=int, help="random seed", default=42)
