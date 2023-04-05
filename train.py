@@ -5,7 +5,7 @@ import torch
 import torch.nn.functional as F
 from utils import get_device, set_random_seeds, eval
 import dataset
-from adapter import SelfTrainer, UncertaintyAggregatedTeacher
+from adapter import SelfTrainer, UncertaintyAggregatedTeacher, PseudoLabelTrainer
 from model import TwoLayerCNN, ThreeLayerCNN, TwoLayerMLPHead, Model
 
 get_dataloader = {"rotate-mnist": dataset.get_rotate_mnist,
@@ -72,13 +72,13 @@ def source_train(args, device="cpu"):
         if staleness > patience:
             break
 
-    return best_encoder, best_head
+    return best_encoder, best_head, train_loader, val_loader
 
 
 def main(args):
     set_random_seeds(args.random_seed)
     device = get_device(args.gpuID)
-    encoder, head = source_train(args, device)
+    encoder, head, src_train_loader, src_val_loader = source_train(args, device)
     if args.method == "wo-adapt":
         pass
     elif args.method == "direct-adapt":
@@ -99,16 +99,29 @@ def main(args):
             train_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=False)
             adapter.adapt(d_name, train_loader, confidence_q_list, args)
         encoder, head = adapter.get_encoder_head()
-    elif args.method == "uat":
+    # elif args.method == "uat":
+    #     model = Model(encoder, head).to(device)
+    #     adapter = UncertaintyAggregatedTeacher(model, device)
+    #     domains = get_domain[args.dataset]
+    #     confidence_q_list = [0.1]
+    #     for domain_idx in range(1, len(domains)):
+    #         print(f"Domain Idx: {domain_idx}")
+    #         d_name = str(domain_idx)
+    #         train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True)
+    #         adapter.adapt(d_name, train_loader, val_loader, confidence_q_list, args)
+    #     model = adapter.get_model()
+    #     encoder, head = model.get_encoder_head()
+    elif args.method == "pseudo-label":
         model = Model(encoder, head).to(device)
-        adapter = UncertaintyAggregatedTeacher(model, device)
+        adapter = PseudoLabelTrainer(model, src_train_loader, src_val_loader, device)
         domains = get_domain[args.dataset]
         confidence_q_list = [0.1]
+        tradeoff_list = [0.5, 1, 5]
         for domain_idx in range(1, len(domains)):
             print(f"Domain Idx: {domain_idx}")
             d_name = str(domain_idx)
             train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True)
-            adapter.adapt(d_name, train_loader, val_loader, confidence_q_list, args)
+            adapter.adapt(d_name, train_loader, val_loader, confidence_q_list, tradeoff_list, args)
         model = adapter.get_model()
         encoder, head = model.get_encoder_head()
 
