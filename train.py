@@ -5,7 +5,7 @@ import torch
 import torch.nn.functional as F
 from utils import get_device, set_random_seeds, eval
 import dataset
-from adapter import SelfTrainer, UncertaintyAggregatedTeacher, PseudoLabelTrainer
+from adapter import SelfTrainer, UncertaintyAggregatedTeacher, PseudoLabelTrainer, TwoTeachersEnsemble
 from model import TwoLayerCNN, ThreeLayerCNN, TwoLayerMLPHead, Model
 
 get_dataloader = {"rotate-mnist": dataset.get_rotate_mnist,
@@ -124,6 +124,20 @@ def main(args):
             adapter.adapt(d_name, train_loader, val_loader, confidence_q_list, tradeoff_list, args)
         model = adapter.get_model()
         encoder, head = model.get_encoder_head()
+    elif args.method == "two-teachers-ens":
+        model = Model(encoder, head).to(device)
+        adapter = TwoTeachersEnsemble(model, device)
+        domains = get_domain[args.dataset]
+        confidence_q_list = [0.1]
+        for domain_idx in range(1, len(domains)):
+            print(f"Domain Idx: {domain_idx}")
+            d_name = str(domain_idx)
+            train_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=False)
+            adapter.adapt(d_name, train_loader, confidence_q_list, args)
+        model = adapter.get_model()
+        encoder, head = model.get_encoder_head()
+
+
 
     # save encoder, head
     os.makedirs(os.path.join(args.ckpt_dir, args.dataset), exist_ok=True)
