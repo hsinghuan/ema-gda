@@ -5,7 +5,7 @@ import torch
 import torch.nn.functional as F
 from utils import get_device, set_random_seeds, eval
 import dataset
-from adapter import SelfTrainer, UncertaintyAggregatedTeacher, PseudoLabelTrainer, TwoTeachersEnsemble
+from adapter import *
 from model import TwoLayerCNN, ThreeLayerCNN, TwoLayerMLPHead, Model
 
 get_dataloader = {"rotate-mnist": dataset.get_rotate_mnist,
@@ -36,9 +36,19 @@ def train(loader, encoder, head, optimizer, device="cpu"):
 
     return total_loss / total_num, total_correct / total_num
 
-
-
-
+# @torch.no_grad()
+# def calc_confidence(loader, encoder, head, device):
+#     # find the quantile
+#     total_prob = []
+#     for data, _ in loader:
+#         data = data.to(device)
+#         logits = head(encoder(data))
+#         prob = torch.softmax(logits, dim=1)
+#         total_prob.append(prob)
+#     total_prob = torch.cat(total_prob)
+#     print(f"average max prob: {torch.mean(torch.amax(total_prob, dim=1))}")
+#     print(f"average entropy: {torch.mean(torch.sum(total_prob * torch.log(total_prob), dim=1))}")
+#
 
 def source_train(args, device="cpu"):
     if args.dataset == "rotate-mnist":
@@ -79,6 +89,8 @@ def main(args):
     set_random_seeds(args.random_seed)
     device = get_device(args.gpuID)
     encoder, head, src_train_loader, src_val_loader = source_train(args, device)
+    print("Calculate Source Confidence")
+    # calc_confidence(src_val_loader, encoder, head, device)
     if args.method == "wo-adapt":
         pass
     elif args.method == "direct-adapt":
@@ -99,18 +111,18 @@ def main(args):
             train_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=False)
             adapter.adapt(d_name, train_loader, confidence_q_list, args)
         encoder, head = adapter.get_encoder_head()
-    # elif args.method == "uat":
-    #     model = Model(encoder, head).to(device)
-    #     adapter = UncertaintyAggregatedTeacher(model, device)
-    #     domains = get_domain[args.dataset]
-    #     confidence_q_list = [0.1]
-    #     for domain_idx in range(1, len(domains)):
-    #         print(f"Domain Idx: {domain_idx}")
-    #         d_name = str(domain_idx)
-    #         train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True)
-    #         adapter.adapt(d_name, train_loader, val_loader, confidence_q_list, args)
-    #     model = adapter.get_model()
-    #     encoder, head = model.get_encoder_head()
+    elif args.method == "uat":
+        model = Model(encoder, head).to(device)
+        adapter = UncertaintyAggregatedTeacher(model, device)
+        domains = get_domain[args.dataset]
+        confidence_q_list = [0.1]
+        for domain_idx in range(1, len(domains)):
+            print(f"Domain Idx: {domain_idx}")
+            d_name = str(domain_idx)
+            train_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=False)
+            adapter.adapt(d_name, train_loader, confidence_q_list, args)
+        model = adapter.get_model()
+        encoder, head = model.get_encoder_head()
     elif args.method == "pseudo-label":
         model = Model(encoder, head).to(device)
         adapter = PseudoLabelTrainer(model, src_train_loader, src_val_loader, device)
@@ -136,7 +148,31 @@ def main(args):
             adapter.adapt(d_name, train_loader, confidence_q_list, args)
         model = adapter.get_model()
         encoder, head = model.get_encoder_head()
-
+    elif args.method == "two-teachers-agr":
+        model = Model(encoder, head).to(device)
+        adapter = TwoTeachersAgreement(model, device)
+        domains = get_domain[args.dataset]
+        confidence_q_list = [0.1]
+        for domain_idx in range(1, len(domains)):
+            print(f"Domain Idx: {domain_idx}")
+            d_name = str(domain_idx)
+            train_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=False)
+            adapter.adapt(d_name, train_loader, confidence_q_list, args)
+        model = adapter.get_model()
+        encoder, head = model.get_encoder_head()
+    elif args.method == "uncertainty-aware-ens":
+        model = Model(encoder, head).to(device)
+        adapter = UncertaintyAwareEnsemble(model, device)
+        domains = get_domain[args.dataset]
+        confidence_q_list = [0.1]
+        sharpness_list = [0.01, 0.05, 0.1, 0.5, 1]
+        for domain_idx in range(1, len(domains)):
+            print(f"Domain Idx: {domain_idx}")
+            d_name = str(domain_idx)
+            train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True)
+            adapter.adapt(d_name, train_loader, confidence_q_list, sharpness_list, args, val_loader)
+        model = adapter.get_model()
+        encoder, head = model.get_encoder_head()
 
 
     # save encoder, head
