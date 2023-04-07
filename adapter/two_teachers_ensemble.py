@@ -169,6 +169,7 @@ class TwoTeachersEnsemble:
         for confidence_q, ckpt_dict in performance_dict.items():
             if ckpt_dict["score"] > best_val_score:
                 best_model = ckpt_dict["model"]
+                best_val_score = ckpt_dict["score"]
 
         self.model = deepcopy(best_model).to(self.device)
 
