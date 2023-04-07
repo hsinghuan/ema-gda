@@ -186,8 +186,11 @@ class PseudoLabelTrainer:
         best_val_score = -np.inf
         best_model = None
         for confidence_q, ckpt_dict in performance_dict.items():
+            score = ckpt_dict["score"]
+            print(f"Confidence Q: {confidence_q} Score: {score}")
             if ckpt_dict["score"] > best_val_score:
                 best_model = ckpt_dict["model"]
+                best_val_score = score
 
         self.model = deepcopy(best_model).to(self.device)
 

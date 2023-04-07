@@ -126,7 +126,9 @@ class SelfTrainer:
         total_prob = torch.cat(total_prob)
         confidence = torch.amax(total_prob, 1) - torch.amin(total_prob, 1)
         alpha = torch.quantile(confidence, confidence_q)
-        print(f"alpha: {alpha} average max prob: {torch.mean(torch.amax(total_prob, 1))}")
+        #
+        # print(f"average max prob: {torch.mean(torch.amax(total_prob, dim=1))}")
+        # print(f"average entropy: {torch.mean(torch.sum(total_prob * torch.log(total_prob), dim=1))}")
         return alpha
         # # make pseudo-labeled dataset
         # data_list = []
@@ -174,6 +176,7 @@ class SelfTrainer:
             if ckpt_dict["score"] > best_val_score:
                 best_encoder = ckpt_dict["encoder"]
                 best_head = ckpt_dict["head"]
+                best_val_score = ckpt_dict["score"]
 
         self._set_encoder_head(best_encoder, best_head)
 

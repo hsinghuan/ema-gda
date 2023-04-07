@@ -69,7 +69,7 @@ class UncertaintyAggregatedTeacher:
 
         return total_correct / total_num
 
-    def _adapt_train_eval(self, train_loader, val_loader, confidence_q, args):
+    def _adapt_train_eval(self, train_loader, confidence_q, args, val_loader=None):
 
         # TODO: update teacher using current teacher and current student
         self._update_teacher(train_loader)
@@ -85,6 +85,12 @@ class UncertaintyAggregatedTeacher:
         staleness = 0
         for e in range(1, args.adapt_epochs + 1):
             train_loss, train_score = self._adapt_train_epoch(model, train_loader, optimizer, alpha)
+            train_acc = self._oracle_eval_epoch(model, train_loader)
+            if not val_loader:
+                best_model = deepcopy(model)
+                best_val_score = train_score
+                print(f"Confidence q: {confidence_q} Epoch: {e} Train Loss: {train_loss} Train Acc: {train_acc}")
+                continue
             val_loss, val_score = self._adapt_eval_epoch(model, val_loader, alpha)
             val_acc = self._oracle_eval_epoch(model, val_loader)
 
@@ -139,7 +145,7 @@ class UncertaintyAggregatedTeacher:
         entropies = -torch.sum(
             torch.softmax(logits, dim=1) * torch.log_softmax(logits, dim=1), dim=1
         )
-        return torch.mean(entropies)
+        return -torch.mean(entropies)
 
 
     def _update_teacher(self, loader):
@@ -150,15 +156,15 @@ class UncertaintyAggregatedTeacher:
         student_logits = []
         for data, _ in loader:
             data = data.to(self.device)
-            teacher_logits.append(self.teacher(data))
-            student_logits.append(self.student(data))
+            teacher_logits.append(self.teacher(data).detach().cpu())
+            student_logits.append(self.student(data).detach().cpu())
         teacher_logits = torch.cat(teacher_logits)
         student_logits = torch.cat(student_logits)
         teacher_conf = self._negative_entropy(teacher_logits)
         student_conf = self._negative_entropy(student_logits)
         print("Teacher confidence:", teacher_conf)
         print("Student confidence:", student_conf)
-        beta = torch.exp(-torch.log(torch.tensor(2.)) * student_conf / teacher_conf)
+        beta = torch.exp(-torch.log(torch.tensor(2.)) * teacher_conf / student_conf) # favor high momentum
         print("Beta:", beta)
         for teacher_param, param in zip(self.teacher.parameters(), self.student.parameters()):
             teacher_param.data = beta * teacher_param + (1 - beta) * param
@@ -171,13 +177,13 @@ class UncertaintyAggregatedTeacher:
                 bn2['num_batches_tracked'].data.copy_(bn1['num_batches_tracked'].data)
 
 
-    def adapt(self, domain_name, train_loader, val_loader, confidence_q_list, args):
+    def adapt(self, domain_name, train_loader, confidence_q_list, args, val_loader=None):
         # pseudo label train loader, val loader
         performance_dict = dict()
         for confidence_q in confidence_q_list:
             run_name = f"{args.method}_{confidence_q}_{args.random_seed}"
             self.writer = SummaryWriter(os.path.join(args.log_dir, args.dataset, domain_name, run_name))
-            model, val_score = self._adapt_train_eval(train_loader, val_loader, confidence_q, args)
+            model, val_score = self._adapt_train_eval(train_loader, confidence_q, args, val_loader)
             performance_dict[confidence_q] = {"model": model, "score": val_score}
 
         best_val_score = -np.inf
@@ -185,6 +191,7 @@ class UncertaintyAggregatedTeacher:
         for confidence_q, ckpt_dict in performance_dict.items():
             if ckpt_dict["score"] > best_val_score:
                 best_model = ckpt_dict["model"]
+                best_val_score = ckpt_dict["score"]
 
         self.student = deepcopy(best_model)
 
