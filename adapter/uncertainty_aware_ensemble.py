@@ -123,12 +123,18 @@ class UncertaintyAwareEnsemble:
             cur_teacher_logits.append(self.model(data).detach().cpu())
         src_teacher_logits = torch.cat(src_teacher_logits)
         cur_teacher_logits = torch.cat(cur_teacher_logits)
-        src_teacher_entropy = self._entropy(src_teacher_logits)
-        cur_teacher_entropy = self._entropy(cur_teacher_logits)
+        # src_teacher_entropy = self._entropy(src_teacher_logits)
+        # cur_teacher_entropy = self._entropy(cur_teacher_logits)
+        src_teacher_prob = F.softmax(src_teacher_logits, dim=1)
+        cur_teacher_prob = F.softmax(cur_teacher_logits, dim=1)
+        src_teacher_conf = torch.mean(torch.amax(src_teacher_prob, dim=1) - torch.amin(src_teacher_prob, dim=1))
+        cur_teacher_conf = torch.mean(torch.amax(cur_teacher_prob, dim=1) - torch.amin(cur_teacher_prob, dim=1))
 
         # src_weight = torch.exp(-torch.log(torch.tensor(2.)) * src_teacher_entropy / cur_teacher_entropy)
-        src_weight = torch.sigmoid((cur_teacher_entropy - src_teacher_entropy) / sharpness)
-        print(f"src teacher entropy: {round(src_teacher_entropy.item(), 4)} cur teacher entropy: {round(cur_teacher_entropy.item(), 4)} src weight: {round(src_weight.item(), 4)}")
+        # src_weight = torch.sigmoid((cur_teacher_entropy - src_teacher_entropy) / sharpness)
+        src_weight = torch.sigmoid((src_teacher_conf - cur_teacher_conf) / sharpness)
+        # print(f"src teacher entropy: {round(src_teacher_entropy.item(), 4)} cur teacher entropy: {round(cur_teacher_entropy.item(), 4)} src weight: {round(src_weight.item(), 4)}")
+        print(f"src teacher conf: {round(src_teacher_conf.item(), 4)} cur teacher conf: {round(cur_teacher_conf.item(), 4)} src weight: {round(src_weight.item(), 4)}")
         return src_weight
 
     @torch.no_grad()
