@@ -1,5 +1,6 @@
 import argparse
 import os
+import numpy as np
 from copy import deepcopy
 import torch
 import torch.nn.functional as F
@@ -165,7 +166,7 @@ def main(args):
         adapter = UncertaintyAwareEnsemble(model, device)
         domains = get_domain[args.dataset]
         confidence_q_list = [0.1]
-        sharpness_list = [0.01, 0.05, 0.1, 0.5, 1]
+        sharpness_list = [0.01, 0.1, 1]
         for domain_idx in range(1, len(domains)):
             print(f"Domain Idx: {domain_idx}")
             d_name = str(domain_idx)
@@ -173,6 +174,101 @@ def main(args):
             adapter.adapt(d_name, train_loader, confidence_q_list, sharpness_list, args, val_loader)
         model = adapter.get_model()
         encoder, head = model.get_encoder_head()
+    elif args.method == "uncertainty-plinear-ens":
+        model = Model(encoder, head).to(device)
+        adapter = UncertaintyPLinearEnsemble(model, device)
+        domains = get_domain[args.dataset]
+        confidence_q_list = [0.1]
+        slope_list = [0.5, 1, 2, 4]
+        for domain_idx in range(1, len(domains)):
+            print(f"Domain Idx: {domain_idx}")
+            d_name = str(domain_idx)
+            train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True)
+            adapter.adapt(d_name, train_loader, confidence_q_list, slope_list, args, val_loader)
+        model = adapter.get_model()
+        encoder, head = model.get_encoder_head()
+    elif args.method == "entropy-plinear-ens":
+        model = Model(encoder, head).to(device)
+        adapter = EntropyPLinearEnsemble(model, device)
+        domains = get_domain[args.dataset]
+        confidence_q_list = [0.1]
+        if args.dataset == "rotate-mnist":
+            class_num = 10
+        elif args.dataset == "portraits":
+            class_num = 2
+        min_slope = 1 / (2 * np.log(class_num))
+        slope_list = [min_slope, 2 * min_slope, 4 * min_slope]
+        for domain_idx in range(1, len(domains)):
+            print(f"Domain Idx: {domain_idx}")
+            d_name = str(domain_idx)
+            train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True)
+            adapter.adapt(d_name, train_loader, confidence_q_list, slope_list, args, val_loader)
+        model = adapter.get_model()
+        encoder, head = model.get_encoder_head()
+    elif args.method == "hierarchical-teacher":
+        model = Model(encoder, head).to(device)
+        adapter = HierarchicalTeacher(model, device)
+        domains = get_domain[args.dataset]
+        confidence_q_list = [0.1]
+        if args.dataset == "rotate-mnist":
+            class_num = 10
+        elif args.dataset == "portraits":
+            class_num = 2
+        min_slope = 1 / (2 * np.log(class_num))
+        slope_list = [min_slope, 50 * min_slope, 100 * min_slope]
+        lambda_list = [5]
+        for domain_idx in range(1, len(domains)):
+            print(f"Domain Idx: {domain_idx}")
+            d_name = str(domain_idx)
+            train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True)
+            adapter.adapt(d_name, train_loader, confidence_q_list, slope_list, lambda_list, args, val_loader)
+        model = adapter.get_model()
+        encoder, head = model.get_encoder_head()
+    elif args.method == "hierarchical-teacher-sigmoid":
+        model = Model(encoder, head).to(device)
+        adapter = HierarchicalTeacherSigmoid(model, device)
+        domains = get_domain[args.dataset]
+        confidence_q_list = [0.1]
+        sharpness_list = [1e-4, 1e-2, 1]
+        lambda_list = [5]
+        for domain_idx in range(1, len(domains)):
+            print(f"Domain Idx: {domain_idx}")
+            d_name = str(domain_idx)
+            train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True)
+            adapter.adapt(d_name, train_loader, confidence_q_list, sharpness_list, lambda_list, args, val_loader)
+        model = adapter.get_model()
+        encoder, head = model.get_encoder_head()
+    elif args.method == "entropy-plinear-calibrated-ens":
+        model = Model(encoder, head).to(device)
+        adapter = EntropyPLinearCalibratedEnsemble(model, device)
+        domains = get_domain[args.dataset]
+        confidence_q_list = [0.1]
+        if args.dataset == "rotate-mnist":
+            class_num = 10
+        elif args.dataset == "portraits":
+            class_num = 2
+        min_slope = 1 / (2 * np.log(class_num))
+        slope_list = [min_slope, 2 * min_slope, 3 * min_slope]
+        for domain_idx in range(1, len(domains)):
+            print(f"Domain Idx: {domain_idx}")
+            d_name = str(domain_idx)
+            train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True)
+            adapter.adapt(d_name, train_loader, confidence_q_list, slope_list, args, val_loader)
+        model = adapter.get_model()
+        encoder, head = model.get_encoder_head()
+    elif args.method == "two-teachers-performances":
+        model = Model(encoder, head).to(device)
+        adapter = TwoTeachersPerformance(model, src_val_loader, device)
+        domains = get_domain[args.dataset]
+        confidence_q_list = [0.1]
+        for domain_idx in range(1, len(domains)):
+            print(f"Domain Idx: {domain_idx}")
+            d_name = str(domain_idx)
+            train_loader= get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=False)
+            adapter.adapt(d_name, train_loader, confidence_q_list, args)
+        model = adapter.get_model()
+        encoder, head = model.get_encoder_head()
+
 
 
     # save encoder, head
