@@ -1,2 +1,2 @@
-from .rotate_mnist import rotate_mnist_domains, get_rotate_mnist
-from .portraits import portraits_domains, get_portraits
+from .rotate_mnist import rotate_mnist_domains, get_rotate_mnist, rotate_mnist_total_train_num, rotate_mnist_class_num
+from .portraits import portraits_domains, get_portraits, portraits_total_train_num, portraits_class_num
