@@ -11,14 +11,17 @@ import matplotlib.pyplot as plt
 src_num = 2000
 int_num = 12000
 tgt_num = 2000
+portraits_total_train_num = src_num + int_num + tgt_num
+portraits_class_num = 2
 tgt_test_num = 1000
 interval = 2000
 portraits_domains = list(range(1 + int_num // interval + 1)) # source, intermediate domains, target
 
 class PortraitsDataset(Dataset):
-    def __init__(self, img_dir, transform=None, target_transform=None):
+    def __init__(self, img_dir, transform=None, target_transform=None, indexed=False):
         self.transform = transform
         self.target_transform = target_transform
+        self.indexed = indexed
 
         F_filenames = os.listdir(os.path.join(img_dir, "F"))
         M_filenames = os.listdir(os.path.join(img_dir, "M"))
@@ -44,7 +47,11 @@ class PortraitsDataset(Dataset):
             image = self.transform(image)
         if self.target_transform:
             label = self.target_transform(label)
-        return image, label
+        # TODO: Indexing the training dataset for temporal ensembling
+        if self.indexed:
+            return idx, image, label
+        else:
+            return image, label
 
 def compute_portraits_stats(img_dir: str):
     full_domain = [1905, 2014]
@@ -63,9 +70,9 @@ def compute_portraits_stats(img_dir: str):
     return mean, std
 
 
-def get_portraits(data_dir: str, domain_idx: int, batch_size: int, target_test: bool = False, val: bool = True):
+def get_portraits(data_dir: str, domain_idx: int, batch_size: int, target_test: bool = False, val: bool = True, indexed: bool = False):
     transform = transforms.Compose([transforms.Normalize((128.8960,), (62.1401,)), transforms.Resize((128,128))])
-    dataset = PortraitsDataset(data_dir, transform=transform)
+    dataset = PortraitsDataset(data_dir, transform=transform, indexed=indexed)
     if target_test:
         assert domain_idx == len(portraits_domains) - 1
         start_idx = src_num + int_num + tgt_num
@@ -98,7 +105,7 @@ def get_portraits(data_dir: str, domain_idx: int, batch_size: int, target_test: 
 
 
 
-# dataset = PortraitsDataset("/home/hhchung/data/faces_aligned_small_mirrored_co_aligned_cropped_cleaned", portraits_domains[0])
+# dataset = PortraitsDataset("/home/hhchung/data/faces_aligned_small_mirrored_co_aligned_cropped_cleaned", portraits_domains[0], indexed=True)
 # print(len(dataset))
 # print(dataset[3], dataset[3][0].shape)
 # plt.imshow(dataset[3][0].squeeze(0), cmap='gray')
@@ -119,3 +126,10 @@ def get_portraits(data_dir: str, domain_idx: int, batch_size: int, target_test: 
 # for data, y in test_loader:
 #     print(data.shape)
 #     print(y.shape)
+
+# train_loader, val_loader = get_portraits("/home/hhchung/data/faces_aligned_small_mirrored_co_aligned_cropped_cleaned", 0, 256, val=True, indexed=True)
+# print(len(train_loader))
+# print(len(val_loader))
+# for idx, data, y in val_loader:
+#     print(idx)
+#     break

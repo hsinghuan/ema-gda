@@ -5,6 +5,17 @@ from torchvision import datasets, transforms
 import torchvision.transforms.functional as TF
 import matplotlib.pyplot as plt
 
+class IndexedMNIST(datasets.MNIST): # Use this for temporal ensembling
+    def __init__(self, root, train=True, transform=None, target_transform=None, download=False):
+        super(IndexedMNIST, self).__init__(root, train=train, transform=transform, target_transform=target_transform, download=download)
+
+    def __getitem__(self, index):
+        image, label = super(IndexedMNIST, self).__getitem__(index) # may be wrong?
+        return index, image, label
+
+    def __len__(self):
+        return super(IndexedMNIST, self).__len__()
+
 
 class RandomRotation:
     def __init__(self, range:List):
@@ -23,29 +34,46 @@ degree_sum = 60
 src_num = 6000
 int_num = 52000
 tgt_num = 2000
+rotate_mnist_total_train_num = src_num + int_num + tgt_num
+rotate_mnist_class_num = 10
 interval = 2000
 interval_num = int_num // interval
 separated_int_domain = [[int_domain[0] + i * (int_domain[1] - int_domain[0]) // interval_num,
                     int_domain[0] + (i + 1) * (int_domain[1] - int_domain[0]) // interval_num] for i in range(interval_num)]
 rotate_mnist_domains = [src_domain] + separated_int_domain + [tgt_domain]
 
-def rotate(dataset, domain, continual):
-    rotated_data_list = []
+def rotate(dataset, domain, continual, indexed=False):
+    index_list = [] if indexed else None
+    rotated_img_list = []
     y_list = []
     data_num = len(dataset)
-    for i, (data, y) in enumerate(dataset):
+
+    for i, data in enumerate(dataset):
+        if indexed:
+            index, img, y = data
+        else:
+            img, y = data
+
         if continual:
             angle = i * (domain[1] - domain[0]) / data_num + domain[0]
         else:
             angle = np.random.uniform(domain[0], domain[1])
-        rotated_data_list.append(TF.rotate(data, angle))
+
+        if indexed:
+            index_list.append(index)
+        rotated_img_list.append(TF.rotate(img, angle))
         y_list.append(y)
-    rotated_data_tensor = torch.cat(rotated_data_list).unsqueeze(1)
+
+    rotated_index_tensor = torch.tensor(index_list) if indexed else None
+    rotated_img_tensor = torch.cat(rotated_img_list).unsqueeze(1)
     rotated_y_tensor = torch.tensor(y_list)
-    dataset = torch.utils.data.TensorDataset(rotated_data_tensor, rotated_y_tensor)
+    if indexed:
+        dataset = torch.utils.data.TensorDataset(rotated_index_tensor, rotated_img_tensor, rotated_y_tensor)
+    else:
+        dataset = torch.utils.data.TensorDataset(rotated_img_tensor, rotated_y_tensor)
     return dataset
 
-def get_rotate_mnist(data_dir: str, domain_idx: int, batch_size: int, target_test: bool = False, val: bool = True, inter_idx: int = None):
+def get_rotate_mnist(data_dir: str, domain_idx: int, batch_size: int, target_test: bool = False, val: bool = True, indexed: bool =False):
     domain = rotate_mnist_domains[domain_idx]
     print("Domain:", domain)
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]) #, RandomRotation(domain)])
@@ -55,7 +83,11 @@ def get_rotate_mnist(data_dir: str, domain_idx: int, batch_size: int, target_tes
         test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
         return test_loader
 
-    train_dataset = datasets.MNIST(data_dir, train=True, download=True, transform=transform)
+    if indexed:
+        train_dataset = IndexedMNIST(data_dir, train=True, download=True, transform=transform)
+    else:
+        train_dataset = datasets.MNIST(data_dir, train=True, download=True, transform=transform)
+
     # print("len train dataset:", len(train_dataset))
     if domain_idx == 0: # == rotate_mnist_domains[0]:
         start_idx = 0
@@ -70,7 +102,7 @@ def get_rotate_mnist(data_dir: str, domain_idx: int, batch_size: int, target_tes
     # print(f"Start Idx: {start_idx} End Idx: {end_idx}")
     train_dataset = torch.utils.data.Subset(train_dataset, range(start_idx, end_idx)) # each image will be seen only once
 
-    train_dataset = rotate(train_dataset, domain, continual=domain_idx!=0)
+    train_dataset = rotate(train_dataset, domain, continual=domain_idx!=0, indexed=indexed)
     # print(f"Number of samples: {len(train_dataset)}")
     if val:
         train_dataset, val_dataset = torch.utils.data.random_split(train_dataset, [int(len(train_dataset) * 0.9), len(train_dataset) - int(len(train_dataset) * 0.9)])
@@ -91,3 +123,10 @@ def get_rotate_mnist(data_dir: str, domain_idx: int, batch_size: int, target_tes
 #     plt.imshow(img.squeeze(0), cmap='gray')
 #     plt.show()
 #     break
+
+
+# mnist_dataset = IndexedMNIST(root='/home/hhchung/data/', train=True, transform=None, target_transform=None, download=True)
+
+# Iterate through the dataset and print index, image, and label
+# for index, image, label in mnist_dataset:
+#     print(index, image, label)
