@@ -16,3 +16,8 @@ class TwoLayerMLPHead(nn.Module):
         x1 = self.dropout(x1)
         output = self.fc2(x1)
         return output
+
+    def feature(self, x):
+        x = self.fc1(x)
+        x = self.bn1(x)
+        return x

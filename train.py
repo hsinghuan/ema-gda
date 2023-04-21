@@ -2,8 +2,10 @@ import argparse
 import os
 import numpy as np
 from copy import deepcopy
+from collections import OrderedDict
 import torch
 import torch.nn.functional as F
+from torchsummary import summary
 from utils import get_device, set_random_seeds, eval
 import dataset
 from adapter import *
@@ -14,6 +16,12 @@ get_dataloader = {"rotate-mnist": dataset.get_rotate_mnist,
 
 get_domain = {"rotate-mnist": dataset.rotate_mnist_domains,
               "portraits": dataset.portraits_domains}
+
+get_total_train_num = {"rotate-mnist": dataset.rotate_mnist_total_train_num,
+                       "portraits": dataset.portraits_total_train_num}
+
+get_class_num = {"rotate-mnist": dataset.rotate_mnist_class_num,
+                 "portraits": dataset.portraits_class_num}
 
 def train(loader, encoder, head, optimizer, device="cpu"):
     encoder.train()
@@ -90,7 +98,9 @@ def main(args):
     set_random_seeds(args.random_seed)
     device = get_device(args.gpuID)
     encoder, head, src_train_loader, src_val_loader = source_train(args, device)
-    print("Calculate Source Confidence")
+    # summary(encoder)
+    # summary(head)
+    # print("Calculate Source Confidence")
     # calc_confidence(src_val_loader, encoder, head, device)
     if args.method == "wo-adapt":
         pass
@@ -112,18 +122,19 @@ def main(args):
             train_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=False)
             adapter.adapt(d_name, train_loader, confidence_q_list, args)
         encoder, head = adapter.get_encoder_head()
-    elif args.method == "uat":
-        model = Model(encoder, head).to(device)
-        adapter = UncertaintyAggregatedTeacher(model, device)
-        domains = get_domain[args.dataset]
-        confidence_q_list = [0.1]
-        for domain_idx in range(1, len(domains)):
-            print(f"Domain Idx: {domain_idx}")
-            d_name = str(domain_idx)
-            train_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=False)
-            adapter.adapt(d_name, train_loader, confidence_q_list, args)
-        model = adapter.get_model()
-        encoder, head = model.get_encoder_head()
+        print("PL Acc List:", adapter.pl_acc_list)
+    # elif args.method == "uat":
+    #     model = Model(encoder, head).to(device)
+    #     adapter = UncertaintyAggregatedTeacher(model, device)
+    #     domains = get_domain[args.dataset]
+    #     confidence_q_list = [0.1]
+    #     for domain_idx in range(1, len(domains)):
+    #         print(f"Domain Idx: {domain_idx}")
+    #         d_name = str(domain_idx)
+    #         train_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=False)
+    #         adapter.adapt(d_name, train_loader, confidence_q_list, args)
+    #     model = adapter.get_model()
+    #     encoder, head = model.get_encoder_head()
     elif args.method == "pseudo-label":
         model = Model(encoder, head).to(device)
         adapter = PseudoLabelTrainer(model, src_train_loader, src_val_loader, device)
@@ -137,137 +148,241 @@ def main(args):
             adapter.adapt(d_name, train_loader, val_loader, confidence_q_list, tradeoff_list, args)
         model = adapter.get_model()
         encoder, head = model.get_encoder_head()
-    elif args.method == "two-teachers-ens":
-        model = Model(encoder, head).to(device)
-        adapter = TwoTeachersEnsemble(model, device)
+    elif args.method == "gradual-domain-ensemble":
         domains = get_domain[args.dataset]
-        confidence_q_list = [0.1]
+        total_train_num = get_total_train_num[args.dataset]
+        class_num = get_class_num[args.dataset]
+        Z = torch.zeros(total_train_num, class_num, dtype=torch.float)
+        z = torch.zeros(total_train_num, class_num, dtype=torch.float)
+        domain2trainloader = OrderedDict()
         for domain_idx in range(1, len(domains)):
             print(f"Domain Idx: {domain_idx}")
-            d_name = str(domain_idx)
-            train_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=False)
-            adapter.adapt(d_name, train_loader, confidence_q_list, args)
-        model = adapter.get_model()
-        encoder, head = model.get_encoder_head()
-    elif args.method == "two-teachers-agr":
+            if domain_idx == len(domains) - 1:
+                train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True, indexed=True)
+            else:
+                train_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=False, indexed=True)
+            domain2trainloader[domain_idx] = train_loader
+
         model = Model(encoder, head).to(device)
-        adapter = TwoTeachersAgreement(model, device)
-        domains = get_domain[args.dataset]
+        momentum_list = [0.1, 0.3, 0.5]
         confidence_q_list = [0.1]
+        performance_dict = dict()
+        for momentum in momentum_list: # global hyper-parameter, same across all domains
+            # gradual adaptation
+            adapter = GradualDomainEnsemble(deepcopy(model), Z, z, momentum, device)
+            for domain_idx in range(1, len(domains)):
+                print(f"Domain Idx: {domain_idx}")
+                adapter.adapt(domain_idx, domain2trainloader, confidence_q_list, args)
+
+            score = adapter.target_validate(val_loader)
+            adapted_model = adapter.get_model()
+            performance_dict[momentum] = {'model': adapted_model, 'score': score, 'pl_acc_list': adapter.pl_acc_list}
+        # hyper-parameter selection
+        best_score = -np.inf
+        best_momentum = None
+        best_model = None
+        best_pl_acc_list = None
+        for momentum, ckpt_dict in performance_dict.items():
+            score = ckpt_dict['score']
+            print(f"Momentum: {momentum} Score: {round(score, 3)}")
+            if score > best_score:
+                best_momentum = momentum
+                best_model = ckpt_dict['model']
+                best_pl_acc_list = ckpt_dict['pl_acc_list']
+                best_score = score
+        print(f"Best momentum: {best_momentum} Best score: {round(best_score, 3)} Best PL Acc List: {best_pl_acc_list}")
+        model = best_model
+        encoder, head = model.get_encoder_head()
+
+    elif args.method == "uagde":
+        domains = get_domain[args.dataset]
+        total_train_num = get_total_train_num[args.dataset]
+        class_num = get_class_num[args.dataset]
+        # Z = torch.ones(total_train_num, class_num, dtype=torch.float) / class_num
+        # z = torch.ones(total_train_num, class_num, dtype=torch.float) / class_num
+        Z = torch.zeros(total_train_num, class_num, dtype=torch.float)
+        z = torch.zeros(total_train_num, class_num, dtype=torch.float)
+        domain2trainloader = OrderedDict()
         for domain_idx in range(1, len(domains)):
             print(f"Domain Idx: {domain_idx}")
-            d_name = str(domain_idx)
-            train_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=False)
-            adapter.adapt(d_name, train_loader, confidence_q_list, args)
-        model = adapter.get_model()
-        encoder, head = model.get_encoder_head()
-    elif args.method == "uncertainty-aware-ens":
+            if domain_idx == len(domains) - 1:
+                train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True, indexed=True)
+            else:
+                train_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=False, indexed=True)
+            domain2trainloader[domain_idx] = train_loader
+
         model = Model(encoder, head).to(device)
-        adapter = UncertaintyAwareEnsemble(model, device)
-        domains = get_domain[args.dataset]
-        confidence_q_list = [0.1]
-        sharpness_list = [0.01, 0.1, 1]
-        for domain_idx in range(1, len(domains)):
-            print(f"Domain Idx: {domain_idx}")
-            d_name = str(domain_idx)
-            train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True)
-            adapter.adapt(d_name, train_loader, confidence_q_list, sharpness_list, args, val_loader)
-        model = adapter.get_model()
-        encoder, head = model.get_encoder_head()
-    elif args.method == "uncertainty-plinear-ens":
-        model = Model(encoder, head).to(device)
-        adapter = UncertaintyPLinearEnsemble(model, device)
-        domains = get_domain[args.dataset]
-        confidence_q_list = [0.1]
-        slope_list = [0.5, 1, 2, 4]
-        for domain_idx in range(1, len(domains)):
-            print(f"Domain Idx: {domain_idx}")
-            d_name = str(domain_idx)
-            train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True)
-            adapter.adapt(d_name, train_loader, confidence_q_list, slope_list, args, val_loader)
-        model = adapter.get_model()
-        encoder, head = model.get_encoder_head()
-    elif args.method == "entropy-plinear-ens":
-        model = Model(encoder, head).to(device)
-        adapter = EntropyPLinearEnsemble(model, device)
-        domains = get_domain[args.dataset]
-        confidence_q_list = [0.1]
-        if args.dataset == "rotate-mnist":
-            class_num = 10
-        elif args.dataset == "portraits":
-            class_num = 2
         min_slope = 1 / (2 * np.log(class_num))
-        slope_list = [min_slope, 2 * min_slope, 4 * min_slope]
-        for domain_idx in range(1, len(domains)):
-            print(f"Domain Idx: {domain_idx}")
-            d_name = str(domain_idx)
-            train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True)
-            adapter.adapt(d_name, train_loader, confidence_q_list, slope_list, args, val_loader)
-        model = adapter.get_model()
-        encoder, head = model.get_encoder_head()
-    elif args.method == "hierarchical-teacher":
-        model = Model(encoder, head).to(device)
-        adapter = HierarchicalTeacher(model, device)
-        domains = get_domain[args.dataset]
+        slope_list = [10 * min_slope, 30 * min_slope, 50 * min_slope] # [min_slope, 10 * min_slope, 50 * min_slope, 100 * min_slope]
+        # mid_slope = np.log(2)
+        # slope_list = [1/4 * mid_slope]
         confidence_q_list = [0.1]
-        if args.dataset == "rotate-mnist":
-            class_num = 10
-        elif args.dataset == "portraits":
-            class_num = 2
-        min_slope = 1 / (2 * np.log(class_num))
-        slope_list = [min_slope, 50 * min_slope, 100 * min_slope]
-        lambda_list = [5]
-        for domain_idx in range(1, len(domains)):
-            print(f"Domain Idx: {domain_idx}")
-            d_name = str(domain_idx)
-            train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True)
-            adapter.adapt(d_name, train_loader, confidence_q_list, slope_list, lambda_list, args, val_loader)
-        model = adapter.get_model()
+        performance_dict = dict()
+        for slope in slope_list: # global hyper-parameter, same across all domains
+            # gradual adaptation
+            adapter = UncertaintyAwareGradualDomainEnsemble(deepcopy(model), Z, z, slope, device)
+            for domain_idx in range(1, len(domains)):
+                print(f"Domain Idx: {domain_idx}")
+                adapter.adapt(domain_idx, domain2trainloader, confidence_q_list, args)
+
+            score = adapter.target_validate(val_loader)
+            adapted_model = adapter.get_model()
+            performance_dict[slope] = {'model': adapted_model, 'score': score, 'pl_acc_list': adapter.pl_acc_list}
+        # model selection
+        best_score = -np.inf
+        best_slope = None
+        best_model = None
+        best_pl_acc_list = None
+        for slope, ckpt_dict in performance_dict.items():
+            score = ckpt_dict['score']
+            print(f"Slope: {slope} Score: {round(score, 3)}")
+            if score > best_score:
+                best_slope = slope
+                best_model = ckpt_dict['model']
+                best_pl_acc_list = ckpt_dict['pl_acc_list']
+                best_score = score
+        print(f"Best slope: {best_slope} Best score: {round(best_score, 3)} PL Acc List:", best_pl_acc_list)
+        model = best_model
         encoder, head = model.get_encoder_head()
-    elif args.method == "hierarchical-teacher-sigmoid":
-        model = Model(encoder, head).to(device)
-        adapter = HierarchicalTeacherSigmoid(model, device)
+    elif args.method == "dagde":
         domains = get_domain[args.dataset]
-        confidence_q_list = [0.1]
-        sharpness_list = [1e-4, 1e-2, 1]
-        lambda_list = [5]
-        for domain_idx in range(1, len(domains)):
+        total_train_num = get_total_train_num[args.dataset]
+        class_num = get_class_num[args.dataset]
+        Z = torch.zeros(total_train_num, class_num, dtype=torch.float)
+        z = torch.zeros(total_train_num, class_num, dtype=torch.float)
+        domain2trainloader = OrderedDict()
+        for domain_idx in range(len(domains)):
             print(f"Domain Idx: {domain_idx}")
-            d_name = str(domain_idx)
-            train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True)
-            adapter.adapt(d_name, train_loader, confidence_q_list, sharpness_list, lambda_list, args, val_loader)
-        model = adapter.get_model()
-        encoder, head = model.get_encoder_head()
-    elif args.method == "entropy-plinear-calibrated-ens":
+            if domain_idx == len(domains) - 1:
+                train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256,
+                                                                        val=True, indexed=True)
+            else:
+                train_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=False,
+                                                            indexed=True)
+            domain2trainloader[domain_idx] = train_loader
+
         model = Model(encoder, head).to(device)
-        adapter = EntropyPLinearCalibratedEnsemble(model, device)
-        domains = get_domain[args.dataset]
+        beta_list = [2e-3]
         confidence_q_list = [0.1]
-        if args.dataset == "rotate-mnist":
-            class_num = 10
-        elif args.dataset == "portraits":
-            class_num = 2
-        min_slope = 1 / (2 * np.log(class_num))
-        slope_list = [min_slope, 2 * min_slope, 3 * min_slope]
-        for domain_idx in range(1, len(domains)):
-            print(f"Domain Idx: {domain_idx}")
-            d_name = str(domain_idx)
-            train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True)
-            adapter.adapt(d_name, train_loader, confidence_q_list, slope_list, args, val_loader)
-        model = adapter.get_model()
+        performance_dict = dict()
+        for beta in beta_list:  # global hyper-parameter, same across all domains
+            # gradual adaptation
+            adapter = DistanceAwareGradualDomainEnsemble(deepcopy(model), Z, z, beta, device)
+            for domain_idx in range(1, len(domains)):
+                print(f"Domain Idx: {domain_idx}")
+                adapter.adapt(domain_idx, domain2trainloader, confidence_q_list, args)
+
+            score = adapter.target_validate(val_loader)
+            adapted_model = adapter.get_model()
+            performance_dict[beta] = {'model': adapted_model, 'score': score, 'pl_acc_list': adapter.pl_acc_list}
+        # model selection
+        best_score = -np.inf
+        best_slope = None
+        best_model = None
+        best_pl_acc_list = None
+        for slope, ckpt_dict in performance_dict.items():
+            score = ckpt_dict['score']
+            print(f"Slope: {slope} Score: {round(score, 3)}")
+            if score > best_score:
+                best_slope = slope
+                best_model = ckpt_dict['model']
+                best_pl_acc_list = ckpt_dict['pl_acc_list']
+                best_score = score
+        print(f"Best slope: {best_slope} Best score: {round(best_score, 3)} PL Acc List:", best_pl_acc_list)
+        model = best_model
         encoder, head = model.get_encoder_head()
-    elif args.method == "two-teachers-performances":
-        model = Model(encoder, head).to(device)
-        adapter = TwoTeachersPerformance(model, src_val_loader, device)
-        domains = get_domain[args.dataset]
-        confidence_q_list = [0.1]
-        for domain_idx in range(1, len(domains)):
-            print(f"Domain Idx: {domain_idx}")
-            d_name = str(domain_idx)
-            train_loader= get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=False)
-            adapter.adapt(d_name, train_loader, confidence_q_list, args)
-        model = adapter.get_model()
-        encoder, head = model.get_encoder_head()
+
+    # elif args.method == "uncertainty-aware-ens":
+    #     model = Model(encoder, head).to(device)
+    #     adapter = UncertaintyAwareEnsemble(model, device)
+    #     domains = get_domain[args.dataset]
+    #     confidence_q_list = [0.1]
+    #     sharpness_list = [0.01, 0.1, 1]
+    #     for domain_idx in range(1, len(domains)):
+    #         print(f"Domain Idx: {domain_idx}")
+    #         d_name = str(domain_idx)
+    #         train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True)
+    #         adapter.adapt(d_name, train_loader, confidence_q_list, sharpness_list, args, val_loader)
+    #     model = adapter.get_model()
+    #     encoder, head = model.get_encoder_head()
+    # elif args.method == "uncertainty-plinear-ens":
+    #     model = Model(encoder, head).to(device)
+    #     adapter = UncertaintyPLinearEnsemble(model, device)
+    #     domains = get_domain[args.dataset]
+    #     confidence_q_list = [0.1]
+    #     slope_list = [0.5, 1, 2, 4]
+    #     for domain_idx in range(1, len(domains)):
+    #         print(f"Domain Idx: {domain_idx}")
+    #         d_name = str(domain_idx)
+    #         train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True)
+    #         adapter.adapt(d_name, train_loader, confidence_q_list, slope_list, args, val_loader)
+    #     model = adapter.get_model()
+    #     encoder, head = model.get_encoder_head()
+    # elif args.method == "entropy-plinear-ens":
+    #     model = Model(encoder, head).to(device)
+    #     adapter = EntropyPLinearEnsemble(model, device)
+    #     domains = get_domain[args.dataset]
+    #     confidence_q_list = [0.1]
+    #     if args.dataset == "rotate-mnist":
+    #         class_num = 10
+    #     elif args.dataset == "portraits":
+    #         class_num = 2
+    #     min_slope = 1 / (2 * np.log(class_num))
+    #     slope_list = [min_slope, 2 * min_slope, 4 * min_slope]
+    #     for domain_idx in range(1, len(domains)):
+    #         print(f"Domain Idx: {domain_idx}")
+    #         d_name = str(domain_idx)
+    #         train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True)
+    #         adapter.adapt(d_name, train_loader, confidence_q_list, slope_list, args, val_loader)
+    #     model = adapter.get_model()
+    #     encoder, head = model.get_encoder_head()
+    # elif args.method == "entropy-sigmoid-ens":
+    #     model = Model(encoder, head).to(device)
+    #     adapter = EntropySigmoidEnsemble(model, device)
+    #     domains = get_domain[args.dataset]
+    #     confidence_q_list = [0.1]
+    #     sharpness_list = [2**-4, 2**-2, 2**0]
+    #     for domain_idx in range(1, len(domains)):
+    #         print(f"Domain Idx: {domain_idx}")
+    #         d_name = str(domain_idx)
+    #         train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True)
+    #         adapter.adapt(d_name, train_loader, confidence_q_list, sharpness_list, args, val_loader)
+    #     model = adapter.get_model()
+    #     encoder, head = model.get_encoder_head()
+    # elif args.method == "hierarchical-teacher":
+    #     model = Model(encoder, head).to(device)
+    #     adapter = HierarchicalTeacher(model, device)
+    #     domains = get_domain[args.dataset]
+    #     confidence_q_list = [0.1]
+    #     if args.dataset == "rotate-mnist":
+    #         class_num = 10
+    #     elif args.dataset == "portraits":
+    #         class_num = 2
+    #     min_slope = 1 / (2 * np.log(class_num))
+    #     slope_list = [min_slope, 50 * min_slope, 100 * min_slope]
+    #     lambda_list = [5]
+    #     for domain_idx in range(1, len(domains)):
+    #         print(f"Domain Idx: {domain_idx}")
+    #         d_name = str(domain_idx)
+    #         train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True)
+    #         adapter.adapt(d_name, train_loader, confidence_q_list, slope_list, lambda_list, args, val_loader)
+    #     model = adapter.get_model()
+    #     encoder, head = model.get_encoder_head()
+    # elif args.method == "hierarchical-teacher-sigmoid":
+    #     model = Model(encoder, head).to(device)
+    #     adapter = HierarchicalTeacherSigmoid(model, device)
+    #     domains = get_domain[args.dataset]
+    #     confidence_q_list = [0.1]
+    #     sharpness_list = [1e-4, 1e-2, 1]
+    #     lambda_list = [5]
+    #     for domain_idx in range(1, len(domains)):
+    #         print(f"Domain Idx: {domain_idx}")
+    #         d_name = str(domain_idx)
+    #         train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True)
+    #         adapter.adapt(d_name, train_loader, confidence_q_list, sharpness_list, lambda_list, args, val_loader)
+    #     model = adapter.get_model()
+    #     encoder, head = model.get_encoder_head()
+
 
 
 

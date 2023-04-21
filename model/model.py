@@ -15,3 +15,6 @@ class Model(nn.Module):
 
     def get_encoder_head(self):
         return self.encoder, self.head
+
+    def feature(self, x):
+        return self.head.feature(self.encoder(x))
