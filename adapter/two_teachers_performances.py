@@ -24,9 +24,9 @@ class TwoTeachersPerformance:
             data = data.to(self.device)
             student_logits = model(data)
             cur_teacher_logits = self.model(data)
-            src_teacher_logits = self.src_teacher(data)
-            teacher_ensemble = (cur_teacher_logits + src_teacher_logits) / 2
-            loss, mask, _ = self._pseudo_label_loss(student_logits, teacher_ensemble, alpha)
+            # src_teacher_logits = self.src_teacher(data)
+            # teacher_ensemble = (cur_teacher_logits + src_teacher_logits) / 2
+            loss, mask, _ = self._pseudo_label_loss(student_logits, cur_teacher_logits, alpha)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -49,9 +49,9 @@ class TwoTeachersPerformance:
             data = data.to(self.device)
             student_logits = model(data)
             cur_teacher_logits = self.model(data)
-            src_teacher_logits = self.src_teacher(data)
-            teacher_ensemble = (cur_teacher_logits + src_teacher_logits) / 2
-            loss, mask, _ = self._pseudo_label_loss(student_logits, teacher_ensemble, alpha)
+            # src_teacher_logits = self.src_teacher(data)
+            # teacher_ensemble = (cur_teacher_logits + src_teacher_logits) / 2
+            loss, mask, _ = self._pseudo_label_loss(student_logits, cur_teacher_logits, alpha)
             total_loss += loss.item() * mask.sum().item()
             total_num += mask.sum().item()
             total_logits.append(student_logits)
@@ -131,11 +131,7 @@ class TwoTeachersPerformance:
         for data, _ in loader:
             data = data.to(self.device)
             cur_teacher_logits = self.model(data)
-            src_teacher_logits = self.src_teacher(data)
-            # cur_teacher_pred.append(torch.argmax(cur_teacher_logits, dim=1))
-            # src_teacher_pred.append(torch.argmax(src_teacher_logits, dim=1))
-            teacher_ensemble = (cur_teacher_logits + src_teacher_logits) / 2
-            prob = torch.softmax(teacher_ensemble, dim=1)
+            prob = torch.softmax(cur_teacher_logits, dim=1)
             total_prob.append(prob)
         total_prob = torch.cat(total_prob)
         confidence = torch.amax(total_prob, 1) - torch.amin(total_prob, 1)
@@ -208,22 +204,22 @@ class TwoTeachersPerformance:
         # TODO: Show Average Confidence
         src_teacher_confidence = self._average_confidence(self.src_teacher, train_loader)
         cur_teacher_confidence = self._average_confidence(self.model, train_loader)
-        print(f"src teacher confidence: {round(src_teacher_confidence, 3)} cur teacher confidence: {round(cur_teacher_confidence, 3)} cur - src: {round(cur_teacher_confidence - src_teacher_confidence, 3)}")
+        print(f"src teacher confidence: {round(src_teacher_confidence, 3)} cur teacher confidence: {round(cur_teacher_confidence, 3)} cur - src: {round(cur_teacher_confidence - src_teacher_confidence, 3)} cur / src: {round(cur_teacher_confidence / src_teacher_confidence, 3)}")
 
         # TODO: Show Difference of Confidence
         src_teacher_doc = self._diff_of_confidence(self.src_teacher, train_loader)
         cur_teacher_doc = self._diff_of_confidence(self.model, train_loader)
-        print(f"src teacher doc: {round(src_teacher_doc, 3)} cur teacher doc: {round(cur_teacher_doc, 3)} cur - src: {round(cur_teacher_doc - src_teacher_doc, 3)}")
+        print(f"src teacher doc: {round(src_teacher_doc, 3)} cur teacher doc: {round(cur_teacher_doc, 3)} cur - src: {round(cur_teacher_doc - src_teacher_doc, 3)} cur / src: {round(cur_teacher_doc / src_teacher_doc, 3)}")
 
         # TODO: Show ATC predicted performances
         src_teacher_atc = self._avg_threshold_confidence(self.src_teacher, train_loader)
         cur_teacher_atc = self._avg_threshold_confidence(self.model, train_loader)
-        print(f"src teacher atc: {round(src_teacher_atc, 3)} cur teacher atc: {round(cur_teacher_atc, 3)} cur - src: {round(cur_teacher_atc - src_teacher_atc, 3)}")
+        print(f"src teacher atc: {round(src_teacher_atc, 3)} cur teacher atc: {round(cur_teacher_atc, 3)} cur - src: {round(cur_teacher_atc - src_teacher_atc, 3)} cur / src: {round(cur_teacher_atc / src_teacher_atc, 3)}")
 
         # TODO: Show ground truth source/current teacher performances on target domain (train/test)
         src_teacher_accuracy = self._oracle_eval_epoch(self.src_teacher, train_loader)
         cur_teacher_accuracy = self._oracle_eval_epoch(self.model, train_loader)
-        print(f"src teacher acc: {round(src_teacher_accuracy, 3)} cur teacher acc: {round(cur_teacher_accuracy, 3)} cur - src: {round(cur_teacher_accuracy - src_teacher_accuracy, 3)}")
+        print(f"src teacher acc: {round(src_teacher_accuracy, 3)} cur teacher acc: {round(cur_teacher_accuracy, 3)} cur - src: {round(cur_teacher_accuracy - src_teacher_accuracy, 3)} cur / src: {round(cur_teacher_accuracy / src_teacher_accuracy, 3)}")
 
 
         performance_dict = dict()

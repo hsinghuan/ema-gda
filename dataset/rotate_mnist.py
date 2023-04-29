@@ -73,7 +73,7 @@ def rotate(dataset, domain, continual, indexed=False):
         dataset = torch.utils.data.TensorDataset(rotated_img_tensor, rotated_y_tensor)
     return dataset
 
-def get_rotate_mnist(data_dir: str, domain_idx: int, batch_size: int, target_test: bool = False, val: bool = True, indexed: bool =False):
+def get_rotate_mnist(data_dir: str, domain_idx: int, batch_size: int, target_test: bool = False, val: bool = True, indexed: bool = False, train_shuffle: bool = True):
     domain = rotate_mnist_domains[domain_idx]
     print("Domain:", domain)
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]) #, RandomRotation(domain)])
@@ -106,19 +106,19 @@ def get_rotate_mnist(data_dir: str, domain_idx: int, batch_size: int, target_tes
     # print(f"Number of samples: {len(train_dataset)}")
     if val:
         train_dataset, val_dataset = torch.utils.data.random_split(train_dataset, [int(len(train_dataset) * 0.9), len(train_dataset) - int(len(train_dataset) * 0.9)])
-        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=train_shuffle)
         val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
         return train_loader, val_loader
     else:
-        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=train_shuffle)
         return train_loader
 
 
 # train_loader = get_rotate_mnist("/home/hhchung/data/", 0, 256, target_test=False, val=False)
 # train_loader = get_rotate_mnist("/home/hhchung/data/", 1, 256, target_test=False, val=False)
-# train_loader = get_rotate_mnist("/home/hhchung/data/", len(rotate_mnist_domains) - 1, 256, target_test=False, val=False)
+# train_loader = get_rotate_mnist("/home/hhchung/data/", len(rotate_mnist_domains) - 10, 256, target_test=False, val=False)
 # for data, _ in train_loader:
-#     img = data[30]
+#     img = data[70]
 #     print(img.shape)
 #     plt.imshow(img.squeeze(0), cmap='gray')
 #     plt.show()

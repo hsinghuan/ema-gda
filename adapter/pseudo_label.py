@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
-from pytorch_adapt.validators import SNDValidator
+from pytorch_adapt.validators import IMValidator # SNDValidator
 
 
 class PseudoLabelTrainer:
@@ -13,7 +13,7 @@ class PseudoLabelTrainer:
         self.model = model.to(self.device)
         self.src_train_loader = src_train_loader
         self.src_val_loader = src_val_loader
-        self.validator = SNDValidator()
+        self.validator = IMValidator() # SNDValidator()
 
     def _adapt_train_epoch(self, model, train_loader, optimizer, alpha, tradeoff):
         model.train()
@@ -50,7 +50,7 @@ class PseudoLabelTrainer:
         total_src_loss /= len_dataloader
         total_tgt_loss /= len_dataloader
         total_logits = torch.cat(total_logits)
-        score = self.validator(target_train={"preds": total_logits})
+        score = self.validator(target_train={"logits": total_logits})
         return total_loss, total_src_loss, total_tgt_loss, score
 
     @torch.no_grad()
@@ -86,7 +86,7 @@ class PseudoLabelTrainer:
         total_src_loss /= len_dataloader
         total_tgt_loss /= len_dataloader
         total_logits = torch.cat(total_logits)
-        score = self.validator(target_train={"preds": total_logits})
+        score = self.validator(target_train={"logits": total_logits})
         return total_loss, total_src_loss, total_tgt_loss, score
 
     @torch.no_grad()

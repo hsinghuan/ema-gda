@@ -10,3 +10,9 @@ from .hierarchical_teacher import HierarchicalTeacher
 from .hierarchical_teacher_sigmoid import HierarchicalTeacherSigmoid
 from .entropy_plinear_calibrated_ensemble import EntropyPLinearCalibratedEnsemble
 from .two_teachers_performances import TwoTeachersPerformance
+from .atc_prob_ensemble import ATCEnsemble
+from .entropy_sigmoid_ensemble import EntropySigmoidEnsemble
+from .atc_plinear_ensemble import ATCPLinearEnsemble
+from .gradual_domain_ensembling import GradualDomainEnsemble
+from .uagde import UncertaintyAwareGradualDomainEnsemble
+from .dagde import DistanceAwareGradualDomainEnsemble

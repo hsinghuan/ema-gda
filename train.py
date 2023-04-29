@@ -98,8 +98,8 @@ def main(args):
     set_random_seeds(args.random_seed)
     device = get_device(args.gpuID)
     encoder, head, src_train_loader, src_val_loader = source_train(args, device)
-    # summary(encoder)
-    # summary(head)
+    summary(encoder)
+    summary(head)
     # print("Calculate Source Confidence")
     # calc_confidence(src_val_loader, encoder, head, device)
     if args.method == "wo-adapt":
@@ -164,7 +164,7 @@ def main(args):
             domain2trainloader[domain_idx] = train_loader
 
         model = Model(encoder, head).to(device)
-        momentum_list = [0.1, 0.3, 0.5]
+        momentum_list = [0.5] # [0.1, 0.3, 0.5]
         confidence_q_list = [0.1]
         performance_dict = dict()
         for momentum in momentum_list: # global hyper-parameter, same across all domains
@@ -213,7 +213,7 @@ def main(args):
 
         model = Model(encoder, head).to(device)
         min_slope = 1 / (2 * np.log(class_num))
-        slope_list = [10 * min_slope, 30 * min_slope, 50 * min_slope] # [min_slope, 10 * min_slope, 50 * min_slope, 100 * min_slope]
+        slope_list = [50 * min_slope] # [10 * min_slope, 30 * min_slope, 50 * min_slope]
         # mid_slope = np.log(2)
         # slope_list = [1/4 * mid_slope]
         confidence_q_list = [0.1]
