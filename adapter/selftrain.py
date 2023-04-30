@@ -172,24 +172,7 @@ class SelfTrainer:
         # print(f"average max prob: {torch.mean(torch.amax(total_prob, dim=1))}")
         # print(f"average entropy: {torch.mean(torch.sum(total_prob * torch.log(total_prob), dim=1))}")
         return alpha
-        # # make pseudo-labeled dataset
-        # data_list = []
-        # lbl_list = []
-        # for data, _ in loader:
-        #     data = data.to(self.device)
-        #     logits = head_t(encoder_t(data))
-        #     prob = torch.softmax(logits, dim=1)
-        #     confidence = torch.amax(prob, 1) - torch.amin(prob, 1)
-        #     indices = confidence >= alpha
-        #     pred = torch.argmax(prob, dim=1)
-        #     data_list.append(data[indices])
-        #     lbl_list.append(pred[indices])
-        # data_tensor = torch.cat(data_list, dim=0)
-        # print("pseudo labeled dataset size:", data_tensor.shape)
-        # lbl_tensor = torch.cat(lbl_list, dim=0)
-        # pseudo_loader = DataLoader(TensorDataset(data_tensor, lbl_tensor), batch_size=128, shuffle=True)
-        #
-        # return pseudo_loader
+
 
     def _pseudo_label_loss(self, student_logits, teacher_logits, alpha):
         # student_logits = head_s(encoder_s(data))

@@ -114,19 +114,3 @@ def get_rotate_mnist(data_dir: str, domain_idx: int, batch_size: int, target_tes
         return train_loader
 
 
-# train_loader = get_rotate_mnist("/home/hhchung/data/", 0, 256, target_test=False, val=False)
-# train_loader = get_rotate_mnist("/home/hhchung/data/", 1, 256, target_test=False, val=False)
-# train_loader = get_rotate_mnist("/home/hhchung/data/", len(rotate_mnist_domains) - 10, 256, target_test=False, val=False)
-# for data, _ in train_loader:
-#     img = data[70]
-#     print(img.shape)
-#     plt.imshow(img.squeeze(0), cmap='gray')
-#     plt.show()
-#     break
-
-
-# mnist_dataset = IndexedMNIST(root='/home/hhchung/data/', train=True, transform=None, target_transform=None, download=True)
-
-# Iterate through the dataset and print index, image, and label
-# for index, image, label in mnist_dataset:
-#     print(index, image, label)

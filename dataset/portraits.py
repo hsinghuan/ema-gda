@@ -104,32 +104,3 @@ def get_portraits(data_dir: str, domain_idx: int, batch_size: int, target_test: 
 
 
 
-
-# dataset = PortraitsDataset("/home/hhchung/data/faces_aligned_small_mirrored_co_aligned_cropped_cleaned", portraits_domains[0], indexed=True)
-# print(len(dataset))
-# print(dataset[3], dataset[3][0].shape)
-# plt.imshow(dataset[3][0].squeeze(0), cmap='gray')
-# plt.show()
-
-# mean, std = compute_portraits_stats("/home/hhchung/data/faces_aligned_small_mirrored_co_aligned_cropped_cleaned")
-# print(mean, std)
-
-# train_loader, val_loader = get_portraits("/home/hhchung/data/faces_aligned_small_mirrored_co_aligned_cropped_cleaned", 0, 256)
-# print(len(train_loader))
-# print(len(val_loader))
-# for data, y in train_loader:
-#     print(data.shape)
-#     print(y.shape)
-#     break
-
-# test_loader = get_portraits("/home/hhchung/data/faces_aligned_small_mirrored_co_aligned_cropped_cleaned", portraits_domains[-1], 128, val=False, target_test=True)
-# for data, y in test_loader:
-#     print(data.shape)
-#     print(y.shape)
-
-# train_loader, val_loader = get_portraits("/home/hhchung/data/faces_aligned_small_mirrored_co_aligned_cropped_cleaned", 0, 256, val=True, indexed=True)
-# print(len(train_loader))
-# print(len(val_loader))
-# for idx, data, y in val_loader:
-#     print(idx)
-#     break

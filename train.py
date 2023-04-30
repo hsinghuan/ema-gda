@@ -45,19 +45,7 @@ def train(loader, encoder, head, optimizer, device="cpu"):
 
     return total_loss / total_num, total_correct / total_num
 
-# @torch.no_grad()
-# def calc_confidence(loader, encoder, head, device):
-#     # find the quantile
-#     total_prob = []
-#     for data, _ in loader:
-#         data = data.to(device)
-#         logits = head(encoder(data))
-#         prob = torch.softmax(logits, dim=1)
-#         total_prob.append(prob)
-#     total_prob = torch.cat(total_prob)
-#     print(f"average max prob: {torch.mean(torch.amax(total_prob, dim=1))}")
-#     print(f"average entropy: {torch.mean(torch.sum(total_prob * torch.log(total_prob), dim=1))}")
-#
+
 
 def source_train(args, device="cpu"):
     if args.dataset == "rotate-mnist":
@@ -98,10 +86,8 @@ def main(args):
     set_random_seeds(args.random_seed)
     device = get_device(args.gpuID)
     encoder, head, src_train_loader, src_val_loader = source_train(args, device)
-    summary(encoder)
-    summary(head)
-    # print("Calculate Source Confidence")
-    # calc_confidence(src_val_loader, encoder, head, device)
+    # summary(encoder)
+    # summary(head)
     if args.method == "wo-adapt":
         pass
     elif args.method == "direct-adapt":
@@ -123,18 +109,6 @@ def main(args):
             adapter.adapt(d_name, train_loader, confidence_q_list, args)
         encoder, head = adapter.get_encoder_head()
         print("PL Acc List:", adapter.pl_acc_list)
-    # elif args.method == "uat":
-    #     model = Model(encoder, head).to(device)
-    #     adapter = UncertaintyAggregatedTeacher(model, device)
-    #     domains = get_domain[args.dataset]
-    #     confidence_q_list = [0.1]
-    #     for domain_idx in range(1, len(domains)):
-    #         print(f"Domain Idx: {domain_idx}")
-    #         d_name = str(domain_idx)
-    #         train_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=False)
-    #         adapter.adapt(d_name, train_loader, confidence_q_list, args)
-    #     model = adapter.get_model()
-    #     encoder, head = model.get_encoder_head()
     elif args.method == "pseudo-label":
         model = Model(encoder, head).to(device)
         adapter = PseudoLabelTrainer(model, src_train_loader, src_val_loader, device)
@@ -198,8 +172,6 @@ def main(args):
         domains = get_domain[args.dataset]
         total_train_num = get_total_train_num[args.dataset]
         class_num = get_class_num[args.dataset]
-        # Z = torch.ones(total_train_num, class_num, dtype=torch.float) / class_num
-        # z = torch.ones(total_train_num, class_num, dtype=torch.float) / class_num
         Z = torch.zeros(total_train_num, class_num, dtype=torch.float)
         z = torch.zeros(total_train_num, class_num, dtype=torch.float)
         domain2trainloader = OrderedDict()
@@ -291,97 +263,6 @@ def main(args):
         print(f"Best slope: {best_slope} Best score: {round(best_score, 3)} PL Acc List:", best_pl_acc_list)
         model = best_model
         encoder, head = model.get_encoder_head()
-
-    # elif args.method == "uncertainty-aware-ens":
-    #     model = Model(encoder, head).to(device)
-    #     adapter = UncertaintyAwareEnsemble(model, device)
-    #     domains = get_domain[args.dataset]
-    #     confidence_q_list = [0.1]
-    #     sharpness_list = [0.01, 0.1, 1]
-    #     for domain_idx in range(1, len(domains)):
-    #         print(f"Domain Idx: {domain_idx}")
-    #         d_name = str(domain_idx)
-    #         train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True)
-    #         adapter.adapt(d_name, train_loader, confidence_q_list, sharpness_list, args, val_loader)
-    #     model = adapter.get_model()
-    #     encoder, head = model.get_encoder_head()
-    # elif args.method == "uncertainty-plinear-ens":
-    #     model = Model(encoder, head).to(device)
-    #     adapter = UncertaintyPLinearEnsemble(model, device)
-    #     domains = get_domain[args.dataset]
-    #     confidence_q_list = [0.1]
-    #     slope_list = [0.5, 1, 2, 4]
-    #     for domain_idx in range(1, len(domains)):
-    #         print(f"Domain Idx: {domain_idx}")
-    #         d_name = str(domain_idx)
-    #         train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True)
-    #         adapter.adapt(d_name, train_loader, confidence_q_list, slope_list, args, val_loader)
-    #     model = adapter.get_model()
-    #     encoder, head = model.get_encoder_head()
-    # elif args.method == "entropy-plinear-ens":
-    #     model = Model(encoder, head).to(device)
-    #     adapter = EntropyPLinearEnsemble(model, device)
-    #     domains = get_domain[args.dataset]
-    #     confidence_q_list = [0.1]
-    #     if args.dataset == "rotate-mnist":
-    #         class_num = 10
-    #     elif args.dataset == "portraits":
-    #         class_num = 2
-    #     min_slope = 1 / (2 * np.log(class_num))
-    #     slope_list = [min_slope, 2 * min_slope, 4 * min_slope]
-    #     for domain_idx in range(1, len(domains)):
-    #         print(f"Domain Idx: {domain_idx}")
-    #         d_name = str(domain_idx)
-    #         train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True)
-    #         adapter.adapt(d_name, train_loader, confidence_q_list, slope_list, args, val_loader)
-    #     model = adapter.get_model()
-    #     encoder, head = model.get_encoder_head()
-    # elif args.method == "entropy-sigmoid-ens":
-    #     model = Model(encoder, head).to(device)
-    #     adapter = EntropySigmoidEnsemble(model, device)
-    #     domains = get_domain[args.dataset]
-    #     confidence_q_list = [0.1]
-    #     sharpness_list = [2**-4, 2**-2, 2**0]
-    #     for domain_idx in range(1, len(domains)):
-    #         print(f"Domain Idx: {domain_idx}")
-    #         d_name = str(domain_idx)
-    #         train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True)
-    #         adapter.adapt(d_name, train_loader, confidence_q_list, sharpness_list, args, val_loader)
-    #     model = adapter.get_model()
-    #     encoder, head = model.get_encoder_head()
-    # elif args.method == "hierarchical-teacher":
-    #     model = Model(encoder, head).to(device)
-    #     adapter = HierarchicalTeacher(model, device)
-    #     domains = get_domain[args.dataset]
-    #     confidence_q_list = [0.1]
-    #     if args.dataset == "rotate-mnist":
-    #         class_num = 10
-    #     elif args.dataset == "portraits":
-    #         class_num = 2
-    #     min_slope = 1 / (2 * np.log(class_num))
-    #     slope_list = [min_slope, 50 * min_slope, 100 * min_slope]
-    #     lambda_list = [5]
-    #     for domain_idx in range(1, len(domains)):
-    #         print(f"Domain Idx: {domain_idx}")
-    #         d_name = str(domain_idx)
-    #         train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True)
-    #         adapter.adapt(d_name, train_loader, confidence_q_list, slope_list, lambda_list, args, val_loader)
-    #     model = adapter.get_model()
-    #     encoder, head = model.get_encoder_head()
-    # elif args.method == "hierarchical-teacher-sigmoid":
-    #     model = Model(encoder, head).to(device)
-    #     adapter = HierarchicalTeacherSigmoid(model, device)
-    #     domains = get_domain[args.dataset]
-    #     confidence_q_list = [0.1]
-    #     sharpness_list = [1e-4, 1e-2, 1]
-    #     lambda_list = [5]
-    #     for domain_idx in range(1, len(domains)):
-    #         print(f"Domain Idx: {domain_idx}")
-    #         d_name = str(domain_idx)
-    #         train_loader, val_loader = get_dataloader[args.dataset](args.data_dir, domain_idx, batch_size=256, val=True)
-    #         adapter.adapt(d_name, train_loader, confidence_q_list, sharpness_list, lambda_list, args, val_loader)
-    #     model = adapter.get_model()
-    #     encoder, head = model.get_encoder_head()
 
 
 
