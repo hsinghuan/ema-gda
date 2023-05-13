@@ -2,3 +2,4 @@ from .selftrain import SelfTrainer
 from .pseudo_label import PseudoLabelTrainer
 from .gradual_domain_ensembling import GradualDomainEnsemble
 from .uagde import UncertaintyAwareGradualDomainEnsemble
+from .dagde import DistanceAwareGradualDomainEnsemble

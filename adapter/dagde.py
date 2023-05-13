@@ -9,15 +9,18 @@ from geomloss import SamplesLoss
 import ot
 
 class DistanceAwareGradualDomainEnsemble:
-    def __init__(self, model, Z, z, beta, device="cpu"):
+    def __init__(self, model, Z, z, beta, trainloader_list, norm_dist_list, device="cpu"):
         self.device = device
         self.model = model.to(self.device)
         self.Z = Z.to(self.device) # intermediate values
-        self.z = z.to(self.device)# temporal outputs
+        self.z = z.to(self.device) # output target
         self.beta = beta
+        self.trainloader_list = trainloader_list
+        self.norm_dist_list = norm_dist_list
         self.validator = IMValidator()
-        # self.dist = SamplesLoss(loss='gaussian', p=2, blur=.05)
+        self.momentum = 0.
         self.pl_acc_list = []
+        self.momentum_record_list = []
 
     def _adapt_train_epoch(self, model, train_loader, optimizer, alpha):
         model.train()
@@ -77,10 +80,10 @@ class DistanceAwareGradualDomainEnsemble:
 
         return total_correct / total_num, total_pl_correct / total_num
 
-    def _adapt_train_eval(self, domain_idx, domain2trainloader, confidence_q, args, val_loader=None):
+    def _adapt_train_eval(self, domain_idx:int, confidence_q:float, args, val_loader=None):
         # update Z first (given that Z is initialized to 0 and source model has been trained)
-        self._update_Z(domain2trainloader, domain_idx)
-        train_loader = domain2trainloader[domain_idx]
+        self._update_Z(domain_idx)
+        train_loader = self.trainloader_list[domain_idx]
         alpha = self._calc_alpha(train_loader, confidence_q) # calculate from Z (accumulated prediction)
 
         model = deepcopy(self.model).to(self.device)
@@ -90,55 +93,28 @@ class DistanceAwareGradualDomainEnsemble:
             train_loss, train_score = self._adapt_train_epoch(model, train_loader, optimizer, alpha)
             train_acc, pl_acc = self._oracle_eval_epoch(model, train_loader)
 
-            print(f"Beta: {round(self.beta, 3)} Confidence q: {confidence_q} Epoch: {e} Train Loss: {train_loss} Train Acc: {train_acc} PL Acc: {pl_acc}")
+            print(f"Beta: {round(self.beta, 3)} Momentum: {round(self.momentum, 3)} Confidence q: {confidence_q} Epoch: {e} Train Loss: {round(train_loss, 5)} Train Acc: {round(train_acc, 4)} PL Acc: {round(pl_acc, 4)}")
             self.writer.add_scalar("Loss/train", train_loss, e)
             self.writer.add_scalar("Score/train", train_score, e)
         self.pl_acc_list.append(pl_acc)
+        self._calc_momentum(domain_idx)
         return model, train_score
 
-    @torch.no_grad()
-    def _calc_momentum(self, loader_a, loader_b):
-        x_a, x_b = [], []
-        for _, data, _ in loader_a:
-            data = data.to(self.device)
-            x_a.append(self.model.feature(data))
-        for _, data, _ in loader_b:
-            data = data.to(self.device)
-            x_b.append(self.model.feature(data))
-        x_a = torch.cat(x_a)
-        x_b = torch.cat(x_b)
-        print("x a shape:", x_a.shape, "x b shape:", x_b.shape)
-        # dist = self.dist(x_a, x_b)
-        dist_mat = ot.dist(x_a, x_b).cpu().detach().numpy()
-        n_a, n_b = x_a.shape[0], x_b.shape[0]
-        a, b = np.ones(n_a) / n_a, np.ones(n_b) / n_b
-        dist = ot.emd2(a, b, dist_mat)
-        momentum = np.exp(- self.beta * dist)
-        print("Dist:", dist, "Momentum:", momentum)
-        return momentum
+
 
     @torch.no_grad()
-    def _update_Z(self, domain2trainloader, domain_idx):
+    def _update_Z(self, domain_idx):
         self.model.eval()
-        # TODO: compare distance between domain_idx - 1 and domain_idx - 2 and calculate momentum
-        if domain_idx == 1:
-            momentum = 0.0
-        else:
-            loader_a = domain2trainloader[domain_idx - 1]
-            loader_b = domain2trainloader[domain_idx - 2]
-            momentum = self._calc_momentum(loader_a, loader_b)
-
-        for d, loader in domain2trainloader.items():
-            if d < domain_idx: # only update future data points
+        for d, loader in enumerate(self.trainloader_list):
+            if d < domain_idx:
                 continue
 
             for idx, img, _ in loader:
                 img = img.to(self.device)
                 output = self.model(img)
                 probs = F.softmax(output, dim=1)
-                # print("domain idx", domain_idx, "before update:", self.z[idx][:5])
-                self.Z[idx] = momentum * self.Z[idx] + (1 - momentum) * probs
-                self.z[idx] = F.normalize(self.Z[idx], p=1)
+                self.Z[idx] = self.momentum * self.Z[idx] + (1 - self.momentum) * probs
+                self.z[idx] = F.normalize(self.Z[idx], p = 1)
                 # Check if self.z sums to 1
                 # print("domain idx", domain_idx, "after update:", self.z[idx][:5])
                 # print(torch.sum(self.z[idx][:3], dim=1))
@@ -155,6 +131,16 @@ class DistanceAwareGradualDomainEnsemble:
 
         return alpha
 
+    @torch.no_grad()
+    def _calc_momentum(self, domain_idx):
+        norm_dist = self.norm_dist_list[domain_idx-1]
+        momentum = np.exp(-self.beta * norm_dist)
+        print("Dist:", norm_dist, "Momentum:", momentum)
+        self.momentum = momentum
+        self.momentum_record_list.append(momentum)
+
+
+
     def _pseudo_label_loss(self, student_logits, ensemble_probs, alpha):
         confidence = torch.amax(ensemble_probs, 1) - torch.amin(ensemble_probs, 1)
         mask = confidence >= alpha
@@ -162,13 +148,13 @@ class DistanceAwareGradualDomainEnsemble:
         pseudo_loss = (F.nll_loss(F.log_softmax(student_logits, dim=1), teacher_pred, reduction='none') * mask).mean()
         return pseudo_loss, mask
 
-    def adapt(self, domain_idx, domain2trainloader, confidence_q_list, args, val_loader=None):
+    def adapt(self, domain_idx, confidence_q_list, args, val_loader=None):
         # pseudo label train loader, val loader
         performance_dict = dict()
         for confidence_q in confidence_q_list:
             run_name = f"{args.method}_{self.beta}_{confidence_q}_{args.random_seed}"
             self.writer = SummaryWriter(os.path.join(args.log_dir, args.dataset, str(domain_idx), run_name))
-            model, val_score = self._adapt_train_eval(domain_idx, domain2trainloader, confidence_q, args, val_loader)
+            model, val_score = self._adapt_train_eval(domain_idx, confidence_q, args, val_loader)
             performance_dict[confidence_q] = {"model": model, "score": val_score}
 
         best_score = -np.inf
