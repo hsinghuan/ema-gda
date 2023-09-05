@@ -47,7 +47,6 @@ class PortraitsDataset(Dataset):
             image = self.transform(image)
         if self.target_transform:
             label = self.target_transform(label)
-        # TODO: Indexing the training dataset for temporal ensembling
         if self.indexed:
             return idx, image, label
         else:

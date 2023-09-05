@@ -3,3 +3,4 @@ from .pseudo_label import PseudoLabelTrainer
 from .gradual_domain_ensembling import GradualDomainEnsemble
 from .uagde import UncertaintyAwareGradualDomainEnsemble
 from .dagde import DistanceAwareGradualDomainEnsemble
+from .pdagde import PairwiseDistanceAwareGradualDomainEnsemble
