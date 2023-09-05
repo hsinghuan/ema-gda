@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
-from pytorch_adapt.validators import IMValidator # SNDValidator
+from pytorch_adapt.validators import IMValidator
 
 
 class GradualDomainEnsemble:
@@ -14,7 +14,7 @@ class GradualDomainEnsemble:
         self.Z = Z.to(self.device) # intermediate values
         self.z = z.to(self.device)# temporal outputs
         self.momentum = momentum
-        self.validator = IMValidator() # SNDValidator()
+        self.validator = IMValidator()
         self.pl_acc_list = []
 
     def _adapt_train_epoch(self, model, train_loader, optimizer, alpha):
@@ -75,23 +75,11 @@ class GradualDomainEnsemble:
 
         return total_correct / total_num, total_pl_correct / total_num
 
-    # def _measure_pl_acc(self, loader):
-    #     total_correct = 0
-    #     total_num = 0
-    #     for idx, _, y in loader:
-    #         y = y.to(self.device)
-    #         pl = torch.argmax(self.z[idx], dim=1)
-    #         total_correct += torch.eq(pl, y).sum().item()
-    #         total_num += y.shape[0]
-    #     return total_correct / total_num
 
-    def _adapt_train_eval(self, domain_idx, domain2trainloader, confidence_q, args, val_loader=None):
+    def _adapt_train_eval(self, domain_idx, domain2trainloader, confidence_q, args):
         # update Z first (given that Z is initialized to 0 and source model has been trained)
         self._update_Z(domain2trainloader, domain_idx)
         train_loader = domain2trainloader[domain_idx]
-        # TODO: measure pseudo-label accuracy
-        # pl_acc = self._measure_pl_acc(train_loader)
-        # self.pl_acc_list.append(pl_acc)
         alpha = self._calc_alpha(train_loader, confidence_q) # calculate from Z (accumulated prediction)
 
         model = deepcopy(self.model).to(self.device)
@@ -115,17 +103,12 @@ class GradualDomainEnsemble:
         for d, loader in domain2trainloader.items():
             if d < domain_idx:
                 continue
-            # print("updated domain:", d)
             for idx, img, _ in loader:
                 img = img.to(self.device)
                 output = self.model(img)
                 probs = F.softmax(output, dim=1)
-                # print("domain idx", domain_idx, "before update:", self.z[idx][:5])
                 self.Z[idx] = self.momentum * self.Z[idx] + (1 - self.momentum) * probs
                 self.z[idx] = self.Z[idx] * (1. / (1. - self.momentum ** domain_idx))
-                # TODO: check if self.z sums to 1
-                # print("domain idx", domain_idx, "after update:", self.z[idx][:5])
-                # print(torch.sum(self.z[idx], dim=1))
 
     @torch.no_grad()
     def _calc_alpha(self, loader, confidence_q):
@@ -146,13 +129,12 @@ class GradualDomainEnsemble:
         pseudo_loss = (F.nll_loss(F.log_softmax(student_logits, dim=1), teacher_pred, reduction='none') * mask).mean()
         return pseudo_loss, mask
 
-    def adapt(self, domain_idx, domain2trainloader, confidence_q_list, args, val_loader=None):
-        # pseudo label train loader, val loader
+    def adapt(self, domain_idx, domain2trainloader, confidence_q_list, args):
         performance_dict = dict()
         for confidence_q in confidence_q_list:
             run_name = f"{args.method}_{self.momentum}_{confidence_q}_{args.random_seed}"
             self.writer = SummaryWriter(os.path.join(args.log_dir, args.dataset, str(domain_idx), run_name))
-            model, val_score = self._adapt_train_eval(domain_idx, domain2trainloader, confidence_q, args, val_loader)
+            model, val_score = self._adapt_train_eval(domain_idx, domain2trainloader, confidence_q, args)
             performance_dict[confidence_q] = {"model": model, "score": val_score}
 
         best_score = -np.inf
