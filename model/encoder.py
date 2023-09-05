@@ -54,3 +54,16 @@ class ThreeLayerCNN(nn.Module): # for portraits
         x = torch.flatten(x, 1)
 
         return x
+
+class OneLayerMLPEnc(nn.Module):
+    def __init__(self, input_dim, output_dim, dropout_p=0.25):
+        super(OneLayerMLPEnc, self).__init__()
+        self.fc = nn.Linear(input_dim, output_dim)
+        self.bn1 = nn.BatchNorm1d(output_dim)
+        self.dropout = nn.Dropout(dropout_p)
+
+    def forward(self, x):
+        x = self.fc(x)
+        x = self.bn1(x)
+        x = self.dropout(x)
+        return x

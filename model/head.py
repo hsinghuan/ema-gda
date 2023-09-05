@@ -21,3 +21,12 @@ class TwoLayerMLPHead(nn.Module):
         x = self.fc1(x)
         x = self.bn1(x)
         return x
+
+
+class OneLayerMLPHead(nn.Module):
+    def __init__(self, input_dim, output_dim):
+        super(OneLayerMLPHead, self).__init__()
+        self.fc = nn.Linear(input_dim, output_dim)
+
+    def forward(self, x):
+        return self.fc(x)
