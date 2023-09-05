@@ -5,14 +5,14 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import TensorDataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from pytorch_adapt.validators import SNDValidator
+from pytorch_adapt.validators import IMValidator # SNDValidator
 
 
 class SelfTrainer:
     def __init__(self, encoder, head, device="cpu"):
         self.device = device
         self._set_encoder_head(encoder, head)
-        self.validator = SNDValidator()
+        self.validator = IMValidator()
         self.pl_acc_list = []
 
     def _adapt_train_epoch(self, encoder_s, head_s, train_loader, optimizer, alpha):
@@ -43,7 +43,7 @@ class SelfTrainer:
         total_loss /= total_num
         # total_pl_correct /= total_num_wo_thres
         total_logits = torch.cat(total_logits)
-        score = self.validator(target_train={"preds": total_logits})
+        score = self.validator(target_train={"logits": total_logits})
         return total_loss, score # , total_pl_correct
 
     def _adapt_eval_epoch(self, encoder_s, head_s, val_loader, alpha):
@@ -71,7 +71,7 @@ class SelfTrainer:
         total_loss /= total_num
         # total_pl_correct /= total_num_wo_thres
         total_logits = torch.cat(total_logits)
-        score = self.validator(target_train={"preds": total_logits})
+        score = self.validator(target_train={"logits": total_logits})
         return total_loss, score # , total_pl_correct
 
     @torch.no_grad()
