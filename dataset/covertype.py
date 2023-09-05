@@ -8,7 +8,7 @@ tgt_num = 50000
 covertype_total_train_num = src_num + int_num + tgt_num
 covertype_class_num = 7
 tgt_test_num = 10000
-interval = 50000
+interval = 25000
 covertype_domains = list(range(1 + int_num // interval + 1)) # source, intermediate domains, target
 
 class CovertypeDataset(Dataset):
