@@ -9,19 +9,23 @@ from torchsummary import summary
 from utils import get_device, set_random_seeds, eval
 import dataset
 from adapter import *
-from model import TwoLayerCNN, ThreeLayerCNN, TwoLayerMLPHead, Model
+from model import TwoLayerCNN, ThreeLayerCNN, OneLayerMLPEnc, TwoLayerMLPHead, OneLayerMLPHead, Model
 
 get_dataloader = {"rotate-mnist": dataset.get_rotate_mnist,
-                  "portraits": dataset.get_portraits}
+                  "portraits": dataset.get_portraits,
+                  "covertype": dataset.get_covertype}
 
 get_domain = {"rotate-mnist": dataset.rotate_mnist_domains,
-              "portraits": dataset.portraits_domains}
+              "portraits": dataset.portraits_domains,
+              "covertype": dataset.covertype_domains}
 
 get_total_train_num = {"rotate-mnist": dataset.rotate_mnist_total_train_num,
-                       "portraits": dataset.portraits_total_train_num}
+                       "portraits": dataset.portraits_total_train_num,
+                       "covertype": dataset.covertype_total_train_num}
 
 get_class_num = {"rotate-mnist": dataset.rotate_mnist_class_num,
-                 "portraits": dataset.portraits_class_num}
+                 "portraits": dataset.portraits_class_num,
+                 "covertype": dataset.covertype_class_num}
 
 def train(loader, encoder, head, optimizer, device="cpu"):
     encoder.train()
@@ -56,6 +60,10 @@ def source_train(args, device="cpu"):
         train_loader, val_loader = get_dataloader["portraits"](args.data_dir, 0, batch_size = 256, val = True)
         feat_dim = 6272
         encoder, head = ThreeLayerCNN(), TwoLayerMLPHead(feat_dim, feat_dim // 2, 2)
+    elif args.dataset == "covertype":
+        train_loader, val_loader = get_dataloader["covertype"](args.data_dir, 0, batch_size = 256, val = True)
+        feat_dim = 54
+        encoder, head = OneLayerMLPEnc(feat_dim, feat_dim // 2, dropout_p=0.5), OneLayerMLPHead(feat_dim // 2, 7)
 
     encoder, head = encoder.to(device), head.to(device)
     optimizer = torch.optim.Adam(list(encoder.parameters()) + list(head.parameters()), lr=1e-3)

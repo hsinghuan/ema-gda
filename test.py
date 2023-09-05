@@ -5,7 +5,7 @@ import torch
 import torch.nn.functional as F
 from utils import get_device, set_random_seeds, eval
 import dataset
-from model import TwoLayerCNN, ThreeLayerCNN, TwoLayerMLPHead
+from model import TwoLayerCNN, ThreeLayerCNN, OneLayerMLPEnc, TwoLayerMLPHead, OneLayerMLPHead
 
 def load_data_model(args, device="cpu"):
     if args.dataset == "rotate-mnist":
@@ -13,9 +13,14 @@ def load_data_model(args, device="cpu"):
         feat_dim = 9216
         encoder, head = TwoLayerCNN(), TwoLayerMLPHead(feat_dim, feat_dim // 2, 10)
     elif args.dataset == "portraits":
-        test_loader = dataset.get_portraits(args.data_dir, len(dataset.portraits_domains) -1, batch_size = 256, target_test=True)
+        test_loader = dataset.get_portraits(args.data_dir, len(dataset.portraits_domains) - 1, batch_size = 256, target_test=True)
         feat_dim = 6272
         encoder, head = ThreeLayerCNN(), TwoLayerMLPHead(feat_dim, feat_dim // 2, 2)
+    elif args.dataset == "covertype":
+        test_loader = dataset.get_covertype(args.data_dir, len(dataset.covertype_domains) - 1, batch_size = 256, target_test=True)
+        feat_dim = 54
+        encoder, head = OneLayerMLPEnc(feat_dim, feat_dim // 2, dropout_p=0.5), OneLayerMLPHead(feat_dim // 2, 7)
+
     encoder, head = encoder.to(device), head.to(device)
     state_dict = torch.load(os.path.join(args.ckpt_dir, args.dataset, f'{args.method}_{args.random_seed}.pt'))
     encoder.load_state_dict(state_dict["encoder"])
