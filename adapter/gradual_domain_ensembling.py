@@ -115,7 +115,7 @@ class GradualDomainEnsemble:
         # find the quantile
         total_prob = []
         for idx, _, _ in loader:
-            total_prob.append(self.Z[idx])
+            total_prob.append(self.z[idx])
         total_prob = torch.cat(total_prob)
         confidence = torch.amax(total_prob, 1) - torch.amin(total_prob, 1)
         alpha = torch.quantile(confidence, confidence_q)
