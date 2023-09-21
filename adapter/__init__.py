@@ -4,3 +4,4 @@ from .gradual_domain_ensembling import GradualDomainEnsemble
 from .uagde import UncertaintyAwareGradualDomainEnsemble
 from .dagde import DistanceAwareGradualDomainEnsemble
 from .pdagde import PairwiseDistanceAwareGradualDomainEnsemble
+from .selftrain_bagging import SelfTrainerBagging
