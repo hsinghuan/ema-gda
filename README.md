@@ -1,4 +1,4 @@
-d# Domain Ensembling for Gradual Domain Adaptation
+# Domain Ensembling for Gradual Domain Adaptation
 
 Code for experiments on gradual domain ensembling (GDE) and uncertainty-aware gradual domain ensembling (UA-GDE)
 
